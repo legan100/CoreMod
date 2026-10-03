@@ -1,0 +1,14 @@
+<component name="libraryTable">
+  <library name="Gradle: io.github.llamalad7:mixinextras-neoforge:0.5.0" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="io.github.llamalad7" artifactId="mixinextras-neoforge" version="0.5.0" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/io.github.llamalad7/mixinextras-neoforge/0.5.0/d734b83ce6542bb70ea31755c1595b88992dbe65/mixinextras-neoforge-0.5.0.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/io.github.llamalad7/mixinextras-neoforge/0.5.0/6c43a148338ba7c804e27c12f4a6c0266edbaaba/mixinextras-neoforge-0.5.0-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/io.github.llamalad7/mixinextras-neoforge/0.5.0/91aac133c151c3cc58ec162eeae959e01c5f65dc/mixinextras-neoforge-0.5.0-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

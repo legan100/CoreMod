@@ -1,0 +1,12 @@
+<component name="libraryTable">
+  <library name="Gradle: net.neoforged:DevLaunch:1.0.2" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="net.neoforged" artifactId="DevLaunch" version="1.0.2" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/net.neoforged/DevLaunch/1.0.2/2e0e9a67793d5bfdedee4f9ea00934dbf3f2e22d/DevLaunch-1.0.2.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/net.neoforged/DevLaunch/1.0.2/2fa28a030340711308bff67c0e363490e9340496/DevLaunch-1.0.2-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

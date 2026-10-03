@@ -1,0 +1,14 @@
+<component name="libraryTable">
+  <library name="Gradle: com.electronwill.night-config:toml:3.8.3" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="com.electronwill.night-config" artifactId="toml" version="3.8.3" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.electronwill.night-config/toml/3.8.3/90b2fd6efcb4a7d5b9810cf78f9d824994d717f2/toml-3.8.3.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.electronwill.night-config/toml/3.8.3/3209fc4545df3789243898cc6ec75bd2bc41e2c2/toml-3.8.3-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/com.electronwill.night-config/toml/3.8.3/56dfa8456ff270f6028c513c9e743af03ad850e3/toml-3.8.3-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

@@ -1,0 +1,14 @@
+<component name="libraryTable">
+  <library name="Gradle: net.neoforged:bus:8.0.5" type="java-imported" external-system-id="GRADLE">
+    <properties groupId="net.neoforged" artifactId="bus" version="8.0.5" />
+    <CLASSES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/net.neoforged/bus/8.0.5/5b2d33285ab5d1554e9798ad98c40d6ea3868bd5/bus-8.0.5.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/net.neoforged/bus/8.0.5/99996fbd08ae64dcb18897564b99360e6662845f/bus-8.0.5-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$USER_HOME$/.gradle/caches/modules-2/files-2.1/net.neoforged/bus/8.0.5/aad64cf0f455585a518c54d7aecf8d656aff912e/bus-8.0.5-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
