@@ -10,16 +10,11 @@ public class SetupManager {
     private FileManager restFileManager;
     private FileManager serverFileManager;
 
-    @Getter
-    private static SetupManager instance;
-
+    @Getter private static SetupManager instance;
     private static int numbersSetupManager = 0;
 
     public SetupManager() {
-        if (numbersSetupManager >= 1) {
-            return;
-        }
-
+        if (numbersSetupManager >= 1) return;
         numbersSetupManager++;
         instance = this;
     }
