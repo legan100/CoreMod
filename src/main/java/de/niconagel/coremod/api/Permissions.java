@@ -21,6 +21,14 @@ public final class Permissions {
     /** Fliegen im Survival/Adventure. Creative und Spectator fliegen immer, die regelt GAMEMODE_*. */
     public static final String FLY = "minecraft.fly";
     public static final String CHAT = "minecraft.chat";
+    /** Kein Kick wegen Chat-Spam. */
+    public static final String CHAT_SPAM = "minecraft.chat.spam";
+    /** Selektoren wie @a, @p, @e in Befehlen. */
+    public static final String SELECTOR = "minecraft.selector";
+    /** Befehlsblöcke, Strukturblöcke und Jigsaw bearbeiten (nur im Creative), Operator-Tab im Creative-Inventar. */
+    public static final String GAMEMASTER = "minecraft.gamemaster";
+    /** Admin-Meldungen sehen, z.B. "[Max: Spielmodus gesetzt]", wenn jemand einen Befehl benutzt. */
+    public static final String NOTIFY = "minecraft.notify";
 
     // Welt verändern
     /** Abbauen, auch Feuerpfeile, TNT-Explosionen und Feld zertrampeln. */
@@ -29,6 +37,8 @@ public final class Permissions {
     public static final String BLOCK_PLACE = "minecraft.block.place";
     /** Loren, Boote, Rüstungsständer, Rahmen, Bilder, Spawn-Eier, Endkristalle, Leinen-Knoten. */
     public static final String ENTITY_PLACE = "minecraft.entity.place";
+    /** Überall bauen. Ohne dieses Recht nur in den Bauzonen, die per API für den Spieler freigegeben sind. */
+    public static final String BUILD_ANYWHERE = "minecraft.build.anywhere";
 
     // Interaktion
     /** Türen, Knöpfe, Hebel, Betten, Schilder, … */
@@ -60,8 +70,14 @@ public final class Permissions {
     public static final String COMMAND_FLYSPEED = command("flyspeed");
     /** /flyspeed für andere Spieler. */
     public static final String COMMAND_FLYSPEED_OTHERS = command("flyspeed.others");
+    /** /mainmenu setview: Hintergrund-View des Hauptmenüs setzen. */
+    public static final String COMMAND_MAINMENU = command("mainmenu");
 
-    /** Recht für einen beliebigen Befehl, auch Vanilla und andere Mods: "gamemode" → "command.gamemode". */
+    /**
+     * Recht für einen beliebigen Befehl, auch Vanilla und andere Mods: "gamemode" → "command.gamemode".
+     * Unterbefehle, die Vanilla oder die Mod nur OPs erlaubt, brauchen zusätzlich ein eigenes Recht
+     * mit dem Pfad der Befehlsteile, z.B. "command.claim.admin" (siehe CommandPermissions).
+     */
     public static String command(String name) {
         return "command." + name;
     }

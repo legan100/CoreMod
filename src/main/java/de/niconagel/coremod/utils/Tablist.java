@@ -9,6 +9,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -22,7 +23,7 @@ import java.util.Locale;
  * Rang vor dem Namen über Scoreboard-Teams (Chat, Nametag; der Client sortiert die Tablist auch nach
  * Team-Namen), in der Tablist zusätzlich bündig ausgerichtet, dazu Header mit Servername, Spieleranzahl und Ping.
  */
-@EventBusSubscriber
+@EventBusSubscriber(value = Dist.DEDICATED_SERVER)
 public final class Tablist {
 
     private Tablist() {
@@ -62,6 +63,11 @@ public final class Tablist {
         PlayerTeam team = scoreboard.getPlayerTeam(name);
         if (team == null) {
             team = scoreboard.addPlayerTeam(name);
+        }
+
+        // Sonst sähen Spieler mit gleichem Rang unsichtbare Spieler (z.B. im Hauptmenü) halbtransparent
+        if (team.canSeeFriendlyInvisibles()) {
+            team.setSeeFriendlyInvisibles(false);
         }
 
         // Immer setzen: Teams werden mit der Welt gespeichert und sollen geänderte Ränge übernehmen

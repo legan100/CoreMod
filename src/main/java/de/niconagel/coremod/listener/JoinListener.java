@@ -41,8 +41,8 @@ public class JoinListener {
                 player.setGameMode(joinMode);
             }
 
-            // Befehlsliste neu senden, damit sie zur geladenen Gruppe passt
-            player.server.getCommands().sendCommands(player);
+            // OP-Level für den Client und Befehlsliste neu senden, damit sie zur geladenen Gruppe passen
+            player.server.getPlayerList().sendPlayerPermissionLevel(player);
         }, player.server);
     }
 

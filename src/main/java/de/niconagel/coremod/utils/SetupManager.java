@@ -1,5 +1,6 @@
 package de.niconagel.coremod.utils;
 
+import de.niconagel.coremod.permission.BuildZones;
 import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.utils.filemanager.DirectoryHandler;
 import de.niconagel.coremod.utils.filemanager.FileManager;
@@ -50,6 +51,7 @@ public class SetupManager {
         }
 
         PermissionManager.load(Path.of("CoreMod/permissions.json"));
+        BuildZones.load();
     }
 
     public FileManager getRestFileManager() {

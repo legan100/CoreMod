@@ -7,8 +7,10 @@ import com.google.gson.reflect.TypeToken;
 import com.mojang.logging.LogUtils;
 import de.niconagel.coremod.api.Group;
 import de.niconagel.coremod.api.Permissions;
+import de.niconagel.coremod.mainmenu.MainMenu;
 import de.niconagel.coremod.utils.PermissionCache;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.GameType;
@@ -76,11 +78,23 @@ public final class PermissionManager {
         return Permissions.matches(getPermissions(getGroup(uuid)), permission);
     }
 
-    /** true = Aktion verbieten. Nur echte Spieler werden eingeschränkt, Fake-Player anderer Mods nie. */
+    /**
+     * true = Aktion verbieten. Nur echte Spieler werden eingeschränkt, Fake-Player anderer Mods nie.
+     * Wer im Hauptmenü ist, darf gar nichts.
+     */
     public static boolean isDenied(Entity entity, String permission) {
         return entity instanceof ServerPlayer player
                 && !player.isFakePlayer()
-                && !has(player.getUUID(), permission);
+                && (MainMenu.isInMenu(player) || !has(player.getUUID(), permission));
+    }
+
+    /** Wie {@link #isDenied(Entity, String)} für Bau-Rechte: ohne {@link Permissions#BUILD_ANYWHERE} nur in freigegebenen Bauzonen. */
+    public static boolean isDenied(Entity entity, String permission, BlockPos pos) {
+        return isDenied(entity, permission)
+                || entity instanceof ServerPlayer player
+                && !player.isFakePlayer()
+                && !has(player.getUUID(), BUILD_ANYWHERE)
+                && !BuildZones.allows(player.level().dimension(), pos, player.getUUID());
     }
 
     public static Set<String> getPermissions(Group group) {
@@ -120,7 +134,7 @@ public final class PermissionManager {
         ));
 
         List<String> builder = new ArrayList<>(player);
-        builder.addAll(List.of(BLOCK_BREAK, BLOCK_PLACE, ENTITY_PLACE, FLY, GAMEMODE_CREATIVE, COMMAND_FLYSPEED));
+        builder.addAll(List.of(BLOCK_BREAK, BLOCK_PLACE, ENTITY_PLACE, FLY, GAMEMODE_CREATIVE, COMMAND_FLYSPEED, command("gamemode")));
 
         Map<String, List<String>> defaults = new LinkedHashMap<>();
         defaults.put(Group.GAST.getDisplayName(), guest);

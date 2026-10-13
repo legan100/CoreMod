@@ -5,6 +5,7 @@ import de.niconagel.coremod.Coremod;
 import de.niconagel.coremod.api.Permissions;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,9 +28,11 @@ import net.minecraft.world.item.LeadItem;
 import net.minecraft.world.item.MinecartItem;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.level.Explosion;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.NeoForgeMod;
@@ -58,13 +61,26 @@ import java.util.UUID;
  * Setzt die Minecraft-Rechte aus {@link Permissions} durch.
  * Fake-Player anderer Mods (z.B. Create-Deployer) werden nie eingeschränkt.
  */
-@EventBusSubscriber
+@EventBusSubscriber(value = Dist.DEDICATED_SERVER)
 public final class PermissionListener {
 
     private static final Map<UUID, Vec3> FROZEN = new HashMap<>();
     private static final ResourceLocation FLY_MODIFIER = ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "fly_permission");
 
     private PermissionListener() {
+    }
+
+    private static boolean deniedSilently(Entity entity, String permission, BlockPos pos) {
+        return PermissionManager.isDenied(entity, permission, pos);
+    }
+
+    /** Wie {@link #deniedSilently(Entity, String, BlockPos)}, meldet dem Spieler aber das Verbot. */
+    private static boolean denied(Entity entity, String permission, BlockPos pos) {
+        if (!deniedSilently(entity, permission, pos)) return false;
+
+        String message = deniedSilently(entity, permission) ? "Dazu hast du keine Rechte." : "Hier darfst du nicht bauen.";
+        ((ServerPlayer) entity).displayClientMessage(Component.literal(message).withStyle(ChatFormatting.RED), true);
+        return true;
     }
 
     private static boolean deniedSilently(Entity entity, String permission) {
@@ -94,7 +110,7 @@ public final class PermissionListener {
 
     @SubscribeEvent
     public static void onBreak(BlockEvent.BreakEvent event) {
-        if (denied(event.getPlayer(), Permissions.BLOCK_BREAK)) event.setCanceled(true);
+        if (denied(event.getPlayer(), Permissions.BLOCK_BREAK, event.getPos())) event.setCanceled(true);
     }
 
     /**
@@ -103,27 +119,30 @@ public final class PermissionListener {
      */
     @SubscribeEvent
     public static void onPlace(BlockEvent.EntityPlaceEvent event) {
-        if (denied(event.getEntity(), Permissions.BLOCK_PLACE)) event.setCanceled(true);
+        if (denied(event.getEntity(), Permissions.BLOCK_PLACE, event.getPos())) event.setCanceled(true);
     }
 
     /** Linksklick: Abbau-Beginn, Notenblöcke, Drachenei, … */
     @SubscribeEvent
     public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
         boolean start = event.getAction() == PlayerInteractEvent.LeftClickBlock.Action.START;
-        if (start ? denied(event.getEntity(), Permissions.BLOCK_BREAK) : deniedSilently(event.getEntity(), Permissions.BLOCK_BREAK)) {
+        if (start ? denied(event.getEntity(), Permissions.BLOCK_BREAK, event.getPos()) : deniedSilently(event.getEntity(), Permissions.BLOCK_BREAK, event.getPos())) {
             event.setCanceled(true);
         }
     }
 
     @SubscribeEvent
     public static void onTrample(BlockEvent.FarmlandTrampleEvent event) {
-        if (deniedSilently(event.getEntity(), Permissions.BLOCK_BREAK)) event.setCanceled(true);
+        if (deniedSilently(event.getEntity(), Permissions.BLOCK_BREAK, event.getPos())) event.setCanceled(true);
     }
 
     /** Explosionen, die ein Spieler ausgelöst hat (TNT, Feuerkugeln, Windkugeln, …). */
     @SubscribeEvent
     public static void onExplosion(ExplosionEvent.Start event) {
-        if (deniedSilently(event.getExplosion().getIndirectSourceEntity(), Permissions.BLOCK_BREAK)) event.setCanceled(true);
+        Explosion explosion = event.getExplosion();
+        if (deniedSilently(explosion.getIndirectSourceEntity(), Permissions.BLOCK_BREAK, BlockPos.containing(explosion.center()))) {
+            event.setCanceled(true);
+        }
     }
 
     // ---------------------------------------------------------------- Interaktion
@@ -138,8 +157,10 @@ public final class PermissionListener {
         ItemStack stack = event.getItemStack();
         if (stack.isEmpty() || stack.getItem() instanceof BlockItem) return;
 
-        String permission = placesEntity(stack) ? Permissions.ENTITY_PLACE : Permissions.ITEM_USE;
-        if (denied(event.getEntity(), permission)) {
+        boolean deny = placesEntity(stack)
+                ? denied(event.getEntity(), Permissions.ENTITY_PLACE, event.getPos())
+                : denied(event.getEntity(), Permissions.ITEM_USE);
+        if (deny) {
             event.setUseItem(TriState.FALSE);
         }
     }
@@ -147,11 +168,13 @@ public final class PermissionListener {
     @SubscribeEvent
     public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
         ItemStack stack = event.getItemStack();
-        String permission = stack.getItem() instanceof BucketItem ? Permissions.BLOCK_PLACE
-                : placesEntity(stack) ? Permissions.ENTITY_PLACE
-                : Permissions.ITEM_USE;
+        // ponytail: Bauzone am Standort des Spielers, nicht am Zielblock; an Chunk-Grenzen ggf. ungenau
+        BlockPos pos = event.getEntity().blockPosition();
+        boolean deny = stack.getItem() instanceof BucketItem ? denied(event.getEntity(), Permissions.BLOCK_PLACE, pos)
+                : placesEntity(stack) ? denied(event.getEntity(), Permissions.ENTITY_PLACE, pos)
+                : denied(event.getEntity(), Permissions.ITEM_USE);
 
-        if (denied(event.getEntity(), permission)) event.setCanceled(true);
+        if (deny) event.setCanceled(true);
     }
 
     @SubscribeEvent
@@ -200,18 +223,19 @@ public final class PermissionListener {
         Projectile projectile = event.getProjectile();
         HitResult hit = event.getRayTraceResult();
 
-        String permission;
+        boolean deny;
         if (hit instanceof EntityHitResult entityHit) {
             // Auch Rahmen, Bilder, Loren, Boote, die keinen normalen Schaden bekommen
-            permission = entityHit.getEntity() instanceof Player ? Permissions.ATTACK_PLAYER : Permissions.ATTACK_ENTITY;
+            deny = deniedSilently(projectile.getOwner(),
+                    entityHit.getEntity() instanceof Player ? Permissions.ATTACK_PLAYER : Permissions.ATTACK_ENTITY);
         } else if (hit.getType() == HitResult.Type.BLOCK && !(projectile instanceof ThrownEnderpearl)) {
             // Pfeile lösen Knöpfe aus, Eier spawnen Hühner, Feuerpfeile zünden TNT, …
-            permission = Permissions.BLOCK_BREAK;
+            deny = deniedSilently(projectile.getOwner(), Permissions.BLOCK_BREAK, BlockPos.containing(hit.getLocation()));
         } else {
             return;
         }
 
-        if (deniedSilently(projectile.getOwner(), permission)) {
+        if (deny) {
             event.setCanceled(true);
             projectile.discard();
         }
