@@ -26,6 +26,9 @@ class PermissionsTest {
         assertEquals(Group.TF_AZUBI, Group.byName("TF-Azubi"));
         assertEquals(Group.TF_AZUBI, Group.byName("tf_azubi"));
         assertEquals(Group.FDL, Group.byName("fdl"));
+        // Die API liefert "Developer", angezeigt wird "Dev"; erkannt werden muss weiter der volle Name
+        assertEquals(Group.DEVELOPER, Group.byName("Developer"));
+        assertEquals("Dev", Group.DEVELOPER.getPrefix());
         assertNull(Group.byName("Spieler"));
         assertNull(Group.byName(null));
     }

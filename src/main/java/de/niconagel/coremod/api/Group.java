@@ -14,11 +14,16 @@ public enum Group {
     FDL_AZUBI("FDL-Azubi", '9'),
     FDL("FDL", '3'),
     BUILDER("Builder", '6'),
-    DEVELOPER("Developer", 'b'),
+    DEVELOPER("Developer", "Dev", 'b'),
     CHEF("Chef", 'c');
 
+    /** Offizieller Name: so heißt die Rolle in der API und in der permissions.json. */
     @Getter
     private final String displayName;
+
+    /** Kurzname für Tablist, Chat und /group. */
+    @Getter
+    private final String prefix;
 
     /** Minecraft-Farbcode, wie bei "&c" bzw. "§c". */
     @Getter
@@ -27,7 +32,12 @@ public enum Group {
     private final String key;
 
     Group(String displayName, char colorCode) {
+        this(displayName, displayName, colorCode);
+    }
+
+    Group(String displayName, String prefix, char colorCode) {
         this.displayName = displayName;
+        this.prefix = prefix;
         this.colorCode = colorCode;
         this.key = normalize(displayName);
     }

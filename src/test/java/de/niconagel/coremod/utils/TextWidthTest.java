@@ -21,7 +21,7 @@ class TextWidthTest {
     /** Alle Rang-Prefixe müssen nach dem Auffüllen exakt gleich breit sein, sonst stehen die "|" nicht untereinander. */
     @Test
     void allGroupsPadToSameWidth() {
-        List<String> names = Arrays.stream(Group.values()).map(Group::getDisplayName).toList();
+        List<String> names = Arrays.stream(Group.values()).map(Group::getPrefix).toList();
         int target = TextWidth.commonWidth(names);
 
         for (String name : names) {

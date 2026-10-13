@@ -44,7 +44,7 @@ public final class Group {
                                     PermissionCache.getRole(player.getUUID());
 
                             String group =
-                                    PermissionManager.getGroup(player.getUUID()).getDisplayName();
+                                    PermissionManager.getGroup(player.getUUID()).getPrefix();
 
                             // Obere Linie
                             player.sendSystemMessage(

@@ -11,25 +11,26 @@ import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 import java.util.Arrays;
 import java.util.Locale;
 
 /**
- * Rang-Prefix und Sortierung über Scoreboard-Teams (der Client sortiert die Tablist nach Team-Namen),
- * dazu Header mit Servername, Spieleranzahl und Ping.
+ * Rang vor dem Namen (nur in der Tablist), Sortierung über Scoreboard-Teams (der Client sortiert
+ * die Tablist nach Team-Namen), dazu Header mit Servername, Spieleranzahl und Ping.
  */
 @EventBusSubscriber
 public final class Tablist {
 
     private static final int PREFIX_WIDTH = TextWidth.commonWidth(
-            Arrays.stream(Group.values()).map(Group::getDisplayName).toList());
+            Arrays.stream(Group.values()).map(Group::getPrefix).toList());
 
     private Tablist() {
     }
 
-    /** Steckt den Spieler in das Team seiner Gruppe. Nach jedem Laden der Gruppe aufrufen. */
+    /** Sortiert den Spieler ein und aktualisiert seinen Tab-Namen. Nach jedem Laden der Gruppe aufrufen. */
     public static void updatePlayer(ServerPlayer player) {
         Scoreboard scoreboard = player.server.getScoreboard();
         PlayerTeam team = team(scoreboard, PermissionManager.getGroup(player.getUUID()));
@@ -37,8 +38,12 @@ public final class Tablist {
         if (scoreboard.getPlayersTeam(player.getScoreboardName()) != team) {
             scoreboard.addPlayerToTeam(player.getScoreboardName(), team);
         }
+
+        // Feuert onTabListName neu und schickt den Namen an alle
+        player.refreshTabListName();
     }
 
+    /** Teams nur zum Sortieren, ohne Prefix, damit Chat und Nametag normal bleiben. */
     private static PlayerTeam team(Scoreboard scoreboard, Group group) {
         // "coremod_00_chef" < "coremod_07_gast" → Chef steht oben
         String name = String.format("coremod_%02d_%s",
@@ -49,16 +54,34 @@ public final class Tablist {
             team = scoreboard.addPlayerTeam(name);
         }
 
-        // Auffüllen mit normalen (4 px) und fetten (5 px) Leerzeichen, damit alle "|" untereinander stehen
-        int[] padding = TextWidth.padding(PREFIX_WIDTH - TextWidth.of(group.getDisplayName()));
+        // Ältere Versionen haben hier ein Prefix gesetzt, das mit der Welt gespeichert ist → leeren
+        if (!team.getPlayerPrefix().getString().isEmpty()) {
+            team.setPlayerPrefix(Component.empty());
+        }
+        return team;
+    }
 
-        // Immer setzen: Teams werden mit der Welt gespeichert und sollen geänderte Farben übernehmen
-        team.setPlayerPrefix(Component.empty()
-                .append(Component.literal(group.getDisplayName()).withStyle(ChatFormatting.getByCode(group.getColorCode())))
+    /** Rang nur in der Tablist, rechtsbündig, damit die "|" untereinander stehen und direkt am Rang sitzen. */
+    @SubscribeEvent
+    public static void onTabListName(PlayerEvent.TabListNameFormat event) {
+        Group group = PermissionManager.getGroup(event.getEntity().getUUID());
+
+        // Auffüllen mit normalen (4 px) und fetten (5 px) Leerzeichen
+        int[] padding = TextWidth.padding(PREFIX_WIDTH - TextWidth.of(group.getPrefix()));
+
+        event.setDisplayName(Component.empty()
                 .append(" ".repeat(padding[0]))
                 .append(Component.literal(" ".repeat(padding[1])).withStyle(ChatFormatting.BOLD))
-                .append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY)));
-        return team;
+                .append(Component.literal(group.getPrefix()).withStyle(ChatFormatting.getByCode(group.getColorCode())))
+                .append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(event.getEntity().getName()));
+    }
+
+    /** "TFs in der Blockwelt": TF rot, Rest grau, fett. */
+    public static Component title() {
+        return Component.empty().withStyle(ChatFormatting.BOLD)
+                .append(Component.literal("TF").withStyle(ChatFormatting.RED))
+                .append(Component.literal("s in der Blockwelt").withStyle(ChatFormatting.GRAY));
     }
 
     @SubscribeEvent
@@ -66,9 +89,7 @@ public final class Tablist {
         MinecraftServer server = event.getServer();
         if (server.getTickCount() % 20 != 0) return;
 
-        Component title = Component.empty().withStyle(ChatFormatting.BOLD)
-                .append(Component.literal("TF").withStyle(ChatFormatting.RED))
-                .append(Component.literal("s in der Blockwelt").withStyle(ChatFormatting.GRAY));
+        Component title = title();
         String players = server.getPlayerCount() + "/" + server.getMaxPlayers();
 
         for (ServerPlayer player : server.getPlayerList().getPlayers()) {

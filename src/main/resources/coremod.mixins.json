@@ -6,6 +6,8 @@
   "mixins": [
     "AbstractArrowMixin",
     "EntityMixin",
+    "ServerCommonPacketListenerImplMixin",
+    "ServerLoginPacketListenerImplMixin",
     "TurtleEggBlockMixin"
   ],
   "injectors": {
