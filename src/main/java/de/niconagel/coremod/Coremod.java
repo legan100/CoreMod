@@ -31,6 +31,7 @@ public class Coremod {
         time.register(event.getDispatcher());
         Color.register(event.getDispatcher());
         Group.register(event.getDispatcher());
+        FlySpeed.register(event.getDispatcher());
     }
 
 }

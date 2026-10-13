@@ -120,7 +120,7 @@ public final class PermissionManager {
         ));
 
         List<String> builder = new ArrayList<>(player);
-        builder.addAll(List.of(BLOCK_BREAK, BLOCK_PLACE, ENTITY_PLACE, FLY, GAMEMODE_CREATIVE));
+        builder.addAll(List.of(BLOCK_BREAK, BLOCK_PLACE, ENTITY_PLACE, FLY, GAMEMODE_CREATIVE, COMMAND_FLYSPEED));
 
         Map<String, List<String>> defaults = new LinkedHashMap<>();
         defaults.put(Group.GAST.getDisplayName(), guest);

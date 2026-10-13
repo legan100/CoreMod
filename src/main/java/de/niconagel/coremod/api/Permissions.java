@@ -57,6 +57,9 @@ public final class Permissions {
     public static final String COMMAND_UHRZEIT = command("uhrzeit");
     public static final String COMMAND_COLOR = command("color");
     public static final String COMMAND_GROUP = command("group");
+    public static final String COMMAND_FLYSPEED = command("flyspeed");
+    /** /flyspeed für andere Spieler. */
+    public static final String COMMAND_FLYSPEED_OTHERS = command("flyspeed.others");
 
     /** Recht für einen beliebigen Befehl, auch Vanilla und andere Mods: "gamemode" → "command.gamemode". */
     public static String command(String name) {

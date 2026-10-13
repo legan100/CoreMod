@@ -13,6 +13,11 @@ public abstract class ServerLoginPacketListenerImplMixin {
 
     @ModifyVariable(method = "disconnect(Lnet/minecraft/network/chat/Component;)V", at = @At("HEAD"), argsOnly = true)
     private Component coremod$replaceMessage(Component reason) {
-        return DisconnectMessages.replace(reason);
+        // Ein Fehler hier darf den Kick nicht verhindern
+        try {
+            return DisconnectMessages.replace(reason);
+        } catch (Throwable e) {
+            return reason;
+        }
     }
 }

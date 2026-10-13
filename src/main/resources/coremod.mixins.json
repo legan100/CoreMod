@@ -7,6 +7,7 @@
     "AbstractArrowMixin",
     "EntityMixin",
     "ServerCommonPacketListenerImplMixin",
+    "ServerGamePacketListenerImplMixin",
     "ServerLoginPacketListenerImplMixin",
     "TurtleEggBlockMixin"
   ],

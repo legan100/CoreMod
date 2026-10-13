@@ -13,6 +13,11 @@ public abstract class ServerCommonPacketListenerImplMixin {
 
     @ModifyVariable(method = "disconnect(Lnet/minecraft/network/chat/Component;)V", at = @At("HEAD"), argsOnly = true)
     private Component coremod$replaceMessage(Component reason) {
-        return DisconnectMessages.replace(reason);
+        // Läuft auch beim Stoppen des Servers, vor dem Speichern der Welt: darf niemals werfen
+        try {
+            return DisconnectMessages.replace(reason);
+        } catch (Throwable e) {
+            return reason;
+        }
     }
 }
