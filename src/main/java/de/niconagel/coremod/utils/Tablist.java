@@ -14,7 +14,8 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -24,13 +25,10 @@ import java.util.Locale;
 @EventBusSubscriber
 public final class Tablist {
 
-    private static final int PREFIX_WIDTH = TextWidth.commonWidth(
-            Arrays.stream(Group.values()).map(Group::getPrefix).toList());
-
     private Tablist() {
     }
 
-    /** Sortiert den Spieler ein und aktualisiert seinen Tab-Namen. Nach jedem Laden der Gruppe aufrufen. */
+    /** Sortiert den Spieler ein und aktualisiert die Tab-Namen. Nach jedem Laden der Gruppe aufrufen. */
     public static void updatePlayer(ServerPlayer player) {
         Scoreboard scoreboard = player.server.getScoreboard();
         PlayerTeam team = team(scoreboard, PermissionManager.getGroup(player.getUUID()));
@@ -39,8 +37,20 @@ public final class Tablist {
             scoreboard.addPlayerToTeam(player.getScoreboardName(), team);
         }
 
-        // Feuert onTabListName neu und schickt den Namen an alle
-        player.refreshTabListName();
+        // Ein neuer Rang kann die Ausrichtung aller ändern
+        refreshAll(player.server);
+    }
+
+    /** Feuert onTabListName für alle neu; geschickt wird nur, was sich geändert hat. */
+    private static void refreshAll(MinecraftServer server) {
+        server.getPlayerList().getPlayers().forEach(ServerPlayer::refreshTabListName);
+    }
+
+    @SubscribeEvent
+    public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        MinecraftServer server = event.getEntity().getServer();
+        // Erst nach dem Entfernen aus der Spielerliste neu ausrichten
+        if (server != null) server.execute(() -> refreshAll(server));
     }
 
     /** Das Team sortiert die Tablist und setzt den Rang vor den Namen in Chat, Nametag und Join-Nachricht. */
@@ -72,10 +82,17 @@ public final class Tablist {
      */
     @SubscribeEvent
     public static void onTabListName(PlayerEvent.TabListNameFormat event) {
-        Group group = PermissionManager.getGroup(event.getEntity().getUUID());
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        Group group = PermissionManager.getGroup(player.getUUID());
+
+        // Nur an den Rängen ausrichten, die gerade online sind, sonst stünde ein einzelner "Chef"
+        // wegen "FDL-Azubi" weit vom Kopf entfernt
+        List<String> online = new ArrayList<>(List.of(group.getPrefix()));
+        player.server.getPlayerList().getPlayers()
+                .forEach(other -> online.add(PermissionManager.getGroup(other.getUUID()).getPrefix()));
 
         // Auffüllen mit normalen (4 px) und fetten (5 px) Leerzeichen
-        int[] padding = TextWidth.padding(PREFIX_WIDTH - TextWidth.of(group.getPrefix()));
+        int[] padding = TextWidth.padding(TextWidth.commonWidth(online) - TextWidth.of(group.getPrefix()));
 
         event.setDisplayName(Component.empty()
                 .append(" ".repeat(padding[0]))

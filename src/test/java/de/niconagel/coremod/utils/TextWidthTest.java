@@ -18,6 +18,12 @@ class TextWidthTest {
         assertEquals(35, TextWidth.of("Builder"));   // i = 2, l = 3
     }
 
+    /** Ist nur ein Rang online, wird nichts aufgefüllt, der Rang steht direkt am Kopf. */
+    @Test
+    void singleRankGetsNoPadding() {
+        assertEquals(TextWidth.of("Chef"), TextWidth.commonWidth(List.of("Chef", "Chef")));
+    }
+
     /** Alle Rang-Prefixe müssen nach dem Auffüllen exakt gleich breit sein, sonst stehen die "|" nicht untereinander. */
     @Test
     void allGroupsPadToSameWidth() {
