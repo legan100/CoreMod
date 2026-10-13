@@ -18,8 +18,8 @@ import java.util.Arrays;
 import java.util.Locale;
 
 /**
- * Rang vor dem Namen (nur in der Tablist), Sortierung über Scoreboard-Teams (der Client sortiert
- * die Tablist nach Team-Namen), dazu Header mit Servername, Spieleranzahl und Ping.
+ * Rang vor dem Namen über Scoreboard-Teams (Chat, Nametag; der Client sortiert die Tablist auch nach
+ * Team-Namen), in der Tablist zusätzlich bündig ausgerichtet, dazu Header mit Servername, Spieleranzahl und Ping.
  */
 @EventBusSubscriber
 public final class Tablist {
@@ -43,7 +43,7 @@ public final class Tablist {
         player.refreshTabListName();
     }
 
-    /** Teams nur zum Sortieren, ohne Prefix, damit Chat und Nametag normal bleiben. */
+    /** Das Team sortiert die Tablist und setzt den Rang vor den Namen in Chat, Nametag und Join-Nachricht. */
     private static PlayerTeam team(Scoreboard scoreboard, Group group) {
         // "coremod_00_chef" < "coremod_07_gast" → Chef steht oben
         String name = String.format("coremod_%02d_%s",
@@ -54,14 +54,22 @@ public final class Tablist {
             team = scoreboard.addPlayerTeam(name);
         }
 
-        // Ältere Versionen haben hier ein Prefix gesetzt, das mit der Welt gespeichert ist → leeren
-        if (!team.getPlayerPrefix().getString().isEmpty()) {
-            team.setPlayerPrefix(Component.empty());
-        }
+        // Immer setzen: Teams werden mit der Welt gespeichert und sollen geänderte Ränge übernehmen
+        team.setPlayerPrefix(rank(group));
         return team;
     }
 
-    /** Rang nur in der Tablist, rechtsbündig, damit die "|" untereinander stehen und direkt am Rang sitzen. */
+    /** "Dev | " in Gruppenfarbe, ohne Abstände. */
+    private static Component rank(Group group) {
+        return Component.empty()
+                .append(Component.literal(group.getPrefix()).withStyle(ChatFormatting.getByCode(group.getColorCode())))
+                .append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY));
+    }
+
+    /**
+     * In der Tablist zusätzlich rechtsbündig, damit die "|" untereinander stehen.
+     * Der Tab-Name ersetzt dort das Team-Prefix, der Rang erscheint also nicht doppelt.
+     */
     @SubscribeEvent
     public static void onTabListName(PlayerEvent.TabListNameFormat event) {
         Group group = PermissionManager.getGroup(event.getEntity().getUUID());
@@ -72,8 +80,7 @@ public final class Tablist {
         event.setDisplayName(Component.empty()
                 .append(" ".repeat(padding[0]))
                 .append(Component.literal(" ".repeat(padding[1])).withStyle(ChatFormatting.BOLD))
-                .append(Component.literal(group.getPrefix()).withStyle(ChatFormatting.getByCode(group.getColorCode())))
-                .append(Component.literal(" | ").withStyle(ChatFormatting.DARK_GRAY))
+                .append(rank(group))
                 .append(event.getEntity().getName()));
     }
 
