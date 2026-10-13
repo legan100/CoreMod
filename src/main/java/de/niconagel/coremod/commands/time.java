@@ -1,9 +1,6 @@
 package de.niconagel.coremod.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import de.niconagel.coremod.api.Permissions;
-import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.utils.InternalMethods;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -15,24 +12,16 @@ public class time {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("uhrzeit")
-                        .requires(PermissionManager.require(Permissions.COMMAND_UHRZEIT))
+                        .requires(source -> source.getEntity() instanceof ServerPlayer player && player.hasPermissions(4))
                         .executes(context -> showTime(context.getSource()))
         );
     }
 
     private static int showTime(CommandSourceStack source) {
-        ServerPlayer player;
-
-        try {
-            player = source.getPlayerOrException();
-        } catch (CommandSyntaxException e) {
-            return 0;
-        }
+        if (!(source.getEntity() instanceof ServerPlayer player)) return 0;
 
         player.sendSystemMessage(
-                Component.literal(
-                        "Aktuelle Uhrzeit: " + InternalMethods.getTime()
-                )
+                Component.literal("Aktuelle Uhrzeit: " + InternalMethods.getTime())
         );
 
         return 1;

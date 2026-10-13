@@ -1,49 +1,51 @@
 package de.niconagel.coremod.listener;
 
-import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.utils.PermissionCache;
+import de.niconagel.coremod.utils.PlayerManager;
 import de.niconagel.coremod.utils.Tablist;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.level.GameType;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
+import java.io.IOException;
 import java.util.UUID;
 
 public class JoinListener {
 
     @SubscribeEvent
     public void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) {
-            return;
-        }
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
         UUID uuid = player.getUUID();
+        PlayerManager playerManager = new PlayerManager(player);
 
-        // Bis die Gruppe geladen ist, gilt der Spieler als Gast und der Spielmodus wird ggf. zurückgesetzt.
-        // Danach bekommt er seinen Modus wieder, wenn seine Gruppe ihn erlaubt.
-        GameType joinMode = player.gameMode.getGameModeForPlayer();
+        try {
+            PermissionCache.load(playerManager.getShortUUID(), playerManager.getUsername());
 
-        // Sofort als Gast einsortieren, sonst stünde der Spieler bis zur API-Antwort ganz oben
-        Tablist.updatePlayer(player);
+            Tablist tablist = new Tablist();
 
-        // API-Abfrage im Hintergrund, bis sie fertig ist, gilt der Spieler als Gast.
-        // Fehler loggt loadAsync selbst. Danach zurück auf den Server-Thread.
-        PermissionCache.loadAsync(uuid).thenRunAsync(() -> {
-            if (player.hasDisconnected()) {
-                PermissionCache.remove(uuid);
-                return;
-            }
+            if (PermissionCache.hasGroup(uuid, "chef"))
+                tablist.create("chef", 5, "§cChef", "", null);
 
-            Tablist.updatePlayer(player);
+            if (PermissionCache.hasGroup(uuid, "developer"))
+                tablist.create("developer", 4, "§bDeveloper", "", null);
 
-            if (player.gameMode.getGameModeForPlayer() != joinMode && PermissionManager.mayUseGameMode(uuid, joinMode)) {
-                player.setGameMode(joinMode);
-            }
+        } catch (IOException | InterruptedException e) {
+            System.err.println("[CoreMod] Fehler beim Laden der Permissions");
+            System.err.println("[CoreMod] Spieler: " + playerManager.getUsername());
+            System.err.println("[CoreMod] UUID: " + playerManager.getShortUUID());
+            System.err.println("[CoreMod] Ursache: " + e.getMessage());
+            e.printStackTrace();
+        } catch (Exception e) {
+            System.err.println("[CoreMod] Unerwarteter Fehler beim Join");
+            System.err.println("[CoreMod] Spieler: " + playerManager.getUsername());
+            e.printStackTrace();
+        }
 
-            // OP-Level für den Client und Befehlsliste neu senden, damit sie zur geladenen Gruppe passen
-            player.server.getPlayerList().sendPlayerPermissionLevel(player);
-        }, player.server);
+        player.getAbilities().mayBuild = false;
+        player.getAbilities().mayfly = false;
+        player.getAbilities().flying = false;
+        player.onUpdateAbilities();
     }
 
     @SubscribeEvent

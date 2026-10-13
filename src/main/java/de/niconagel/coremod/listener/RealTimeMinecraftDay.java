@@ -16,7 +16,6 @@ public class RealTimeMinecraftDay {
     private static final ZoneId ZONE = ZoneId.of("Europe/Berlin");
     private static final double LAT = 49.4521;
     private static final double LON = 11.0767;
-
     private static final long UPDATE_TICKS = 100;
     private static long lastTick = -1;
 
@@ -52,9 +51,7 @@ public class RealTimeMinecraftDay {
         if (n >= r && n < s) {
             time = Math.round((n - r) * 12000.0 / (s - r));
         } else {
-            ZonedDateTime nextRise = n >= s
-                    ? sun(date.plusDays(1), true)
-                    : rise;
+            ZonedDateTime nextRise = n >= s ? sun(date.plusDays(1), true) : rise;
 
             if (nextRise == null) {
                 normalTime(level, now);
@@ -74,38 +71,26 @@ public class RealTimeMinecraftDay {
 
     private static ZonedDateTime sun(LocalDate date, boolean rise) {
         int day = date.getDayOfYear();
-        double offset = date.atTime(12, 0).atZone(ZONE)
-                .getOffset().getTotalSeconds() / 3600.0;
-
+        double offset = date.atStartOfDay(ZONE).getOffset().getTotalSeconds() / 3600.0;
         double lngHour = LON / 15.0;
         double t = day + ((rise ? 6 : 18) - lngHour) / 24.0;
-
         double m = 0.9856 * t - 3.289;
 
-        double l = norm(
-                m
-                        + 1.916 * Math.sin(Math.toRadians(m))
-                        + 0.020 * Math.sin(Math.toRadians(2 * m))
-                        + 282.634
-        );
+        double l = norm(m
+                + 1.916 * Math.sin(Math.toRadians(m))
+                + 0.020 * Math.sin(Math.toRadians(2 * m))
+                + 282.634);
 
-        double ra = Math.toDegrees(
-                Math.atan(0.91764 * Math.tan(Math.toRadians(l)))
-        );
-
+        double ra = Math.toDegrees(Math.atan(0.91764 * Math.tan(Math.toRadians(l))));
         ra = norm(ra);
         ra += Math.floor(l / 90) * 90 - Math.floor(ra / 90) * 90;
         ra /= 15;
 
         double sinDec = 0.39782 * Math.sin(Math.toRadians(l));
         double cosDec = Math.cos(Math.asin(sinDec));
-
-        double cosH = (
-                Math.cos(Math.toRadians(90.833))
-                        - sinDec * Math.sin(Math.toRadians(LAT))
-        ) / (
-                cosDec * Math.cos(Math.toRadians(LAT))
-        );
+        double cosH = (Math.cos(Math.toRadians(90.833))
+                - sinDec * Math.sin(Math.toRadians(LAT)))
+                / (cosDec * Math.cos(Math.toRadians(LAT)));
 
         if (cosH > 1 || cosH < -1) return null;
 
