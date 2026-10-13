@@ -1,8 +1,11 @@
 package de.niconagel.coremod.utils;
 
+import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.utils.filemanager.DirectoryHandler;
 import de.niconagel.coremod.utils.filemanager.FileManager;
 import lombok.Getter;
+
+import java.nio.file.Path;
 
 public class SetupManager {
 
@@ -45,6 +48,8 @@ public class SetupManager {
             serverFileManager.writeInNextFreeLine("tablistheader: null");
             serverFileManager.writeInNextFreeLine("tablistfooter: null");
         }
+
+        PermissionManager.load(Path.of("CoreMod/permissions.json"));
     }
 
     public FileManager getRestFileManager() {

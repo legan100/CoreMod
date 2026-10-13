@@ -1,11 +1,12 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "de.niconagel.coremod",
+  "package": "de.niconagel.coremod.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "PlayerListMixin",
-    "DimensionTypeMixin"
+    "AbstractArrowMixin",
+    "EntityMixin",
+    "TurtleEggBlockMixin"
   ],
   "injectors": {
     "defaultRequire": 1

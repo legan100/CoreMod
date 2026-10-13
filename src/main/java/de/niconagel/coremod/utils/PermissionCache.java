@@ -11,6 +11,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.security.PrivateKey;
 import java.util.Base64;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +27,7 @@ public final class PermissionCache {
     private static final String API = "https://tfs-in-der-blockwelt.themineattack.de/";
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final Map<UUID, PlayerPermission> CACHE = new ConcurrentHashMap<>();
+    private static final Path PRIVATE_KEY = Path.of("CoreMod/client_private.pem");
 
     private PermissionCache() {
     }
@@ -139,20 +144,46 @@ public final class PermissionCache {
     private static PlayerPermission parsePlayerData(String response) throws IOException {
         try {
             JsonObject root = JsonParser.parseString(response).getAsJsonObject();
+
+            if (root.has("encrypted") && root.get("encrypted").getAsBoolean()) {
+                root = JsonParser.parseString(decrypt(root.getAsJsonObject("payload"))).getAsJsonObject();
+            }
+
             JsonObject data = root.has("data") && root.get("data").isJsonObject() ? root.getAsJsonObject("data") : root;
 
             String username = getJsonString(data, "username");
             String role = getJsonString(data, "role");
-            String lpGroup = getJsonString(data, "lp_group");
             String apiUuid = getJsonString(data, "uuid");
 
             if (role == null || role.isBlank()) role = "Spieler";
-            if (lpGroup == null || lpGroup.isBlank()) lpGroup = "default";
 
-            return new PlayerPermission(username, apiUuid, role, lpGroup);
+            return new PlayerPermission(username, apiUuid, role);
+        } catch (IOException e) {
+            throw e;
         } catch (Exception e) {
             throw new IOException("Ungültige API-Antwort.", e);
         }
+    }
+
+    private static String decrypt(JsonObject payload) throws IOException, GeneralSecurityException {
+        if (!Files.exists(PRIVATE_KEY)) {
+            throw new IOException("Die API-Antwort ist verschlüsselt, aber " + PRIVATE_KEY + " fehlt.");
+        }
+
+        PrivateKey key;
+        try {
+            key = ResponseCrypto.readPrivateKey(Files.readString(PRIVATE_KEY, StandardCharsets.UTF_8));
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
+            throw new IOException(PRIVATE_KEY + " ist kein gültiger Private Key (erwartet: -----BEGIN PRIVATE KEY-----).", e);
+        }
+
+        return ResponseCrypto.decrypt(
+                key,
+                payload.get("encrypted_key").getAsString(),
+                payload.get("iv").getAsString(),
+                payload.get("data").getAsString(),
+                payload.get("tag").getAsString()
+        );
     }
 
     private static String getJsonString(JsonObject object, String key) {
@@ -160,20 +191,9 @@ public final class PermissionCache {
         return object.get(key).getAsString();
     }
 
-    public static boolean hasGroup(UUID uuid, String group) {
-        PlayerPermission permission = CACHE.get(uuid);
-        if (permission == null) return false;
-        return permission.lpGroup().equalsIgnoreCase(group);
-    }
-
     public static String getRole(UUID uuid) {
         PlayerPermission permission = CACHE.get(uuid);
         return permission == null ? "Spieler" : permission.role();
-    }
-
-    public static String getLpGroup(UUID uuid) {
-        PlayerPermission permission = CACHE.get(uuid);
-        return permission == null ? "default" : permission.lpGroup();
     }
 
     public static PlayerPermission get(UUID uuid) {
@@ -192,6 +212,6 @@ public final class PermissionCache {
         return Set.copyOf(CACHE.keySet());
     }
 
-    public record PlayerPermission(String username, String apiUuid, String role, String lpGroup) {
+    public record PlayerPermission(String username, String apiUuid, String role) {
     }
 }

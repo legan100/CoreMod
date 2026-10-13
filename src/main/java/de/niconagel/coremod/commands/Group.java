@@ -1,6 +1,8 @@
 package de.niconagel.coremod.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
+import de.niconagel.coremod.api.Permissions;
+import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.utils.PermissionCache;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
@@ -16,6 +18,7 @@ public final class Group {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("group")
+                        .requires(PermissionManager.require(Permissions.COMMAND_GROUP))
                         .executes(context -> {
                             ServerPlayer player =
                                     context.getSource().getPlayerOrException();
@@ -40,8 +43,8 @@ public final class Group {
                             String role =
                                     PermissionCache.getRole(player.getUUID());
 
-                            String lpGroup =
-                                    PermissionCache.getLpGroup(player.getUUID());
+                            String group =
+                                    PermissionManager.getGroup(player.getUUID()).getDisplayName();
 
                             // Obere Linie
                             player.sendSystemMessage(
@@ -70,7 +73,7 @@ public final class Group {
                                     Component.literal("Gruppe: ")
                                             .withStyle(ChatFormatting.GRAY)
                                             .append(
-                                                    Component.literal(lpGroup)
+                                                    Component.literal(group)
                                                             .withStyle(ChatFormatting.WHITE)
                                             )
                             );
