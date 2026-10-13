@@ -35,20 +35,27 @@ public final class PermissionCache {
             .connectTimeout(Duration.ofSeconds(10))
             .build();
 
-    private static final Map<UUID, PlayerPermission> CACHE = new ConcurrentHashMap<>();
+    private static final Map<UUID, PlayerPermission> CACHE =
+            new ConcurrentHashMap<>();
 
-    private PermissionCache() {}
+    private static final Path PRIVATE_KEY =
+            Path.of("CoreMod/client_private.pem");
+
+    private PermissionCache() {
+    }
 
     public static void load(String shortUuid, String username)
             throws IOException, InterruptedException {
 
-        if (shortUuid == null || shortUuid.isBlank())
+        if (shortUuid == null || shortUuid.isBlank()) {
             throw new IOException("Es wurde keine UUID angegeben.");
+        }
 
         String id = shortUuid.trim().replace("-", "");
 
-        if (id.length() != 32)
+        if (id.length() != 32) {
             throw new IOException("Ungültige UUID: " + shortUuid);
+        }
 
         loadInternal(uuid(id), id, username);
     }
@@ -56,49 +63,69 @@ public final class PermissionCache {
     public static void load(UUID uuid)
             throws IOException, InterruptedException {
 
-        if (uuid == null)
+        if (uuid == null) {
             throw new IOException("Es wurde keine UUID angegeben.");
+        }
 
         loadInternal(uuid, uuid.toString().replace("-", ""), null);
     }
 
-    private static void loadInternal(UUID uuid, String shortUuid, String username)
-            throws IOException, InterruptedException {
+    private static void loadInternal(
+            UUID uuid,
+            String shortUuid,
+            String username
+    ) throws IOException, InterruptedException {
 
         SetupManager setup = SetupManager.getInstance();
 
-        if (setup == null)
-            throw new IllegalStateException("SetupManager wurde noch nicht initialisiert.");
+        if (setup == null) {
+            throw new IllegalStateException(
+                    "SetupManager wurde noch nicht initialisiert."
+            );
+        }
 
         FileManager config = setup.getRestFileManager();
 
-        if (config == null)
-            throw new IllegalStateException("api.yml wurde noch nicht geladen.");
+        if (config == null) {
+            throw new IllegalStateException(
+                    "api.yml wurde noch nicht geladen."
+            );
+        }
 
         String apiKey = required(config, "apikey");
         String host = normalizeHost(required(config, "host"));
-        String publicKey = normalizePublicKey(required(config, "client-public-key"));
+        String publicKey = normalizePublicKey(
+                required(config, "client-public-key")
+        );
 
         int port = 443;
         String portValue = config.getYamlValue("port");
 
-        if (portValue != null && !portValue.isBlank() && !portValue.equalsIgnoreCase("null")) {
+        if (portValue != null
+                && !portValue.isBlank()
+                && !portValue.equalsIgnoreCase("null")) {
             try {
                 port = Integer.parseInt(portValue.trim());
             } catch (NumberFormatException e) {
-                throw new IOException("Ungültiger API-Port: " + portValue, e);
+                throw new IOException(
+                        "Ungültiger API-Port: " + portValue, e
+                );
             }
         }
 
-        if (port < 1 || port > 65535)
+        if (port < 1 || port > 65535) {
             throw new IOException("Ungültiger API-Port: " + port);
+        }
 
         String publicKeyBase64 = Base64.getEncoder().encodeToString(
-                publicKey.getBytes(StandardCharsets.UTF_8));
+                publicKey.getBytes(StandardCharsets.UTF_8)
+        );
 
         String url = buildBaseUrl(host, port)
                 + "/api/community/users?uuid="
-                + java.net.URLEncoder.encode(shortUuid, StandardCharsets.UTF_8);
+                + java.net.URLEncoder.encode(
+                shortUuid, StandardCharsets.UTF_8
+        );
 
         System.out.println("[PermissionCache] API-Anfrage: " + url);
 
@@ -123,59 +150,94 @@ public final class PermissionCache {
         try {
             response = HTTP.send(
                     request,
-                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                    HttpResponse.BodyHandlers.ofString(
+                            StandardCharsets.UTF_8
+                    )
+            );
         } catch (java.net.http.HttpTimeoutException e) {
             throw new IOException("API-Request Timeout: " + url, e);
         } catch (ConnectException e) {
-            throw new IOException("API konnte nicht erreicht werden: " + url, e);
+            throw new IOException(
+                    "API konnte nicht erreicht werden: " + url, e
+            );
         } catch (UnknownHostException e) {
-            throw new IOException("API-Host konnte nicht aufgelöst werden: " + host, e);
+            throw new IOException(
+                    "API-Host konnte nicht aufgelöst werden: " + host, e
+            );
         } catch (IOException e) {
-            throw new IOException("HTTP-Fehler beim Zugriff auf die API: " + e.getMessage(), e);
+            throw new IOException(
+                    "HTTP-Fehler beim Zugriff auf die API: "
+                            + e.getMessage(),
+                    e
+            );
         }
 
         int status = response.statusCode();
 
         if (status < 200 || status >= 300) {
-            String body = response.body() == null ? "" : response.body();
+            String body = response.body() == null
+                    ? ""
+                    : response.body();
 
-            if (body.length() > 1000)
+            if (body.length() > 1000) {
                 body = body.substring(0, 1000) + "...";
+            }
 
             throw new IOException(
-                    "API HTTP " + status + " bei " + url + " | Antwort: " + body);
+                    "API HTTP " + status + " bei " + url
+                            + " | Antwort: " + body
+            );
         }
 
         String body = response.body();
 
-        if (body == null || body.isBlank())
+        if (body == null || body.isBlank()) {
             throw new IOException("API lieferte eine leere Antwort.");
+        }
 
-        if (isEncrypted(body))
+        if (isEncrypted(body)) {
             body = decryptResponse(body);
+        }
 
         PlayerPermission permission = parsePlayerData(body);
 
         CACHE.put(uuid, permission);
 
-        System.out.println("[PermissionCache] Permissions erfolgreich geladen");
-        System.out.println("[PermissionCache] Spieler: " +
-                (permission.username() != null
+        System.out.println(
+                "[PermissionCache] Permissions erfolgreich geladen"
+        );
+        System.out.println(
+                "[PermissionCache] Spieler: "
+                        + (permission.username() != null
                         ? permission.username()
-                        : username != null ? username : "unbekannt"));
+                        : username != null ? username : "unbekannt")
+        );
         System.out.println("[PermissionCache] UUID: " + uuid);
-        System.out.println("[PermissionCache] Short-UUID: " + shortUuid);
-        System.out.println("[PermissionCache] Rolle: " + permission.role());
-        System.out.println("[PermissionCache] Gruppe: " + permission.lpGroup());
+        System.out.println(
+                "[PermissionCache] Short-UUID: " + shortUuid
+        );
+        System.out.println(
+                "[PermissionCache] Rolle: " + permission.role()
+        );
+        System.out.println(
+                "[PermissionCache] Gruppe: " + permission.lpGroup()
+        );
     }
 
-    private static String decryptResponse(String response) throws IOException {
+    private static String decryptResponse(String response)
+            throws IOException {
+
         try {
-            JsonObject root = JsonParser.parseString(response).getAsJsonObject();
+            JsonObject root = JsonParser.parseString(response)
+                    .getAsJsonObject();
+
             JsonObject payload = root.getAsJsonObject("payload");
 
-            if (payload == null)
-                throw new IOException("Verschlüsselte Antwort enthält kein payload.");
+            if (payload == null) {
+                throw new IOException(
+                        "Verschlüsselte Antwort enthält kein payload."
+                );
+            }
 
             String encryptedKey = requiredJson(payload, "encrypted_key");
             String iv = requiredJson(payload, "iv");
@@ -184,21 +246,37 @@ public final class PermissionCache {
 
             PrivateKey privateKey = loadPrivateKey();
 
-            byte[] encryptedAesKey = Base64.getDecoder().decode(encryptedKey);
+            byte[] encryptedAesKey =
+                    Base64.getDecoder().decode(encryptedKey);
             byte[] ivBytes = Base64.getDecoder().decode(iv);
             byte[] tagBytes = Base64.getDecoder().decode(tag);
             byte[] cipherBytes = Base64.getDecoder().decode(data);
 
-            Cipher rsa = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+            Cipher rsa = Cipher.getInstance(
+                    "RSA/ECB/OAEPWithSHA-256AndMGF1Padding"
+            );
             rsa.init(Cipher.DECRYPT_MODE, privateKey);
 
             byte[] aesKey = rsa.doFinal(encryptedAesKey);
 
-            byte[] combined = new byte[cipherBytes.length + tagBytes.length];
-            System.arraycopy(cipherBytes, 0, combined, 0, cipherBytes.length);
-            System.arraycopy(tagBytes, 0, combined, cipherBytes.length, tagBytes.length);
+            byte[] combined = new byte[
+                    cipherBytes.length + tagBytes.length
+                    ];
+
+            System.arraycopy(
+                    cipherBytes, 0,
+                    combined, 0,
+                    cipherBytes.length
+            );
+
+            System.arraycopy(
+                    tagBytes, 0,
+                    combined, cipherBytes.length,
+                    tagBytes.length
+            );
 
             Cipher aes = Cipher.getInstance("AES/GCM/NoPadding");
+
             aes.init(
                     Cipher.DECRYPT_MODE,
                     new SecretKeySpec(aesKey, "AES"),
@@ -214,15 +292,21 @@ public final class PermissionCache {
             throw e;
         } catch (Exception e) {
             throw new IOException(
-                    "Fehler beim Entschlüsseln der API-Antwort: " + e.getMessage(), e);
+                    "Fehler beim Entschlüsseln der API-Antwort: "
+                            + e.getMessage(),
+                    e
+            );
         }
     }
 
     private static PrivateKey loadPrivateKey() throws IOException {
-        Path path = Path.of("CoreMod/client_private.pem");
+        Path path = PRIVATE_KEY;
 
-        if (!Files.exists(path))
-            throw new IOException("Private Key nicht gefunden: " + path);
+        if (!Files.exists(path)) {
+            throw new IOException(
+                    "Private Key nicht gefunden: " + path
+            );
+        }
 
         try {
             String pem = Files.readString(path, StandardCharsets.UTF_8)
@@ -235,42 +319,61 @@ public final class PermissionCache {
                     .replace("-----END PRIVATE KEY-----", "")
                     .replaceAll("\\s", "");
 
-            if (content.isBlank())
-                throw new IOException("Private Key enthält keinen Inhalt.");
+            if (content.isBlank()) {
+                throw new IOException(
+                        "Private Key enthält keinen Inhalt."
+                );
+            }
 
             byte[] encoded = Base64.getDecoder().decode(content);
 
             return KeyFactory.getInstance("RSA")
-                    .generatePrivate(new PKCS8EncodedKeySpec(encoded));
+                    .generatePrivate(
+                            new PKCS8EncodedKeySpec(encoded)
+                    );
 
         } catch (IOException e) {
             throw e;
         } catch (Exception e) {
-            throw new IOException("Private Key konnte nicht geladen werden.", e);
+            throw new IOException(
+                    "Private Key konnte nicht geladen werden.", e
+            );
         }
     }
 
-    private static String requiredJson(JsonObject object, String key)
-            throws IOException {
+    private static String requiredJson(
+            JsonObject object,
+            String key
+    ) throws IOException {
 
-        if (object == null || !object.has(key) || object.get(key).isJsonNull())
-            throw new IOException("Verschlüsselte Antwort enthält kein '" + key + "'.");
+        if (object == null
+                || !object.has(key)
+                || object.get(key).isJsonNull()) {
+            throw new IOException(
+                    "Verschlüsselte Antwort enthält kein '" + key + "'."
+            );
+        }
 
         String value = object.get(key).getAsString();
 
-        if (value == null || value.isBlank())
-            throw new IOException("Verschlüsseltes Feld '" + key + "' ist leer.");
+        if (value == null || value.isBlank()) {
+            throw new IOException(
+                    "Verschlüsseltes Feld '" + key + "' ist leer."
+            );
+        }
 
         return value;
     }
 
     private static boolean isEncrypted(String response) {
         try {
-            JsonObject root = JsonParser.parseString(response).getAsJsonObject();
+            JsonObject root = JsonParser.parseString(response)
+                    .getAsJsonObject();
 
             return root.has("encrypted")
                     && !root.get("encrypted").isJsonNull()
                     && root.get("encrypted").getAsBoolean();
+
         } catch (Exception e) {
             return false;
         }
@@ -280,9 +383,11 @@ public final class PermissionCache {
             throws IOException {
 
         try {
-            JsonObject root = JsonParser.parseString(response).getAsJsonObject();
+            JsonObject root = JsonParser.parseString(response)
+                    .getAsJsonObject();
 
-            JsonObject data = root.has("data") && root.get("data").isJsonObject()
+            JsonObject data = root.has("data")
+                    && root.get("data").isJsonObject()
                     ? root.getAsJsonObject("data")
                     : root;
 
@@ -294,11 +399,13 @@ public final class PermissionCache {
             JsonObject stats = object(data, "stats");
             JsonObject status = object(data, "status");
 
-            if (role == null || role.isBlank())
+            if (role == null || role.isBlank()) {
                 role = "Spieler";
+            }
 
-            if (group == null || group.isBlank())
+            if (group == null || group.isBlank()) {
                 group = "default";
+            }
 
             return new PlayerPermission(
                     username,
@@ -327,25 +434,40 @@ public final class PermissionCache {
         }
     }
 
-    private static String first(JsonObject primary, JsonObject fallback, String key) {
+    private static String first(
+            JsonObject primary,
+            JsonObject fallback,
+            String key
+    ) {
         String value = str(primary, key);
         return value != null ? value : str(fallback, key);
     }
 
-    private static JsonObject object(JsonObject object, String key) {
-        return object != null && object.has(key) && object.get(key).isJsonObject()
+    private static JsonObject object(
+            JsonObject object,
+            String key
+    ) {
+        return object != null
+                && object.has(key)
+                && object.get(key).isJsonObject()
                 ? object.getAsJsonObject(key)
                 : null;
     }
 
-    private static UUID normalizeUuid(String value) throws IOException {
-        if (value == null || value.isBlank())
+    private static UUID normalizeUuid(String value)
+            throws IOException {
+
+        if (value == null || value.isBlank()) {
             return null;
+        }
 
         value = value.trim().replace("-", "");
 
-        if (value.length() != 32)
-            throw new IOException("Ungültige UUID von der API: " + value);
+        if (value.length() != 32) {
+            throw new IOException(
+                    "Ungültige UUID von der API: " + value
+            );
+        }
 
         return uuid(value);
     }
@@ -353,17 +475,20 @@ public final class PermissionCache {
     private static UUID uuid(String value) throws IOException {
         try {
             return UUID.fromString(
-                    value.substring(0, 8) + "-" +
-                            value.substring(8, 12) + "-" +
-                            value.substring(12, 16) + "-" +
-                            value.substring(16, 20) + "-" +
-                            value.substring(20));
+                    value.substring(0, 8) + "-"
+                            + value.substring(8, 12) + "-"
+                            + value.substring(12, 16) + "-"
+                            + value.substring(16, 20) + "-"
+                            + value.substring(20)
+            );
         } catch (Exception e) {
             throw new IOException("Ungültige UUID: " + value, e);
         }
     }
 
-    private static String normalizePublicKey(String key) throws IOException {
+    private static String normalizePublicKey(String key)
+            throws IOException {
+
         key = key.replace("\\n", "\n")
                 .replace("\r\n", "\n")
                 .replace("\r", "\n")
@@ -372,46 +497,65 @@ public final class PermissionCache {
         String header = "-----BEGIN PUBLIC KEY-----";
         String footer = "-----END PUBLIC KEY-----";
 
-        if (!key.startsWith(header))
-            throw new IOException("Client-Public-Key besitzt keinen gültigen Header.");
+        if (!key.startsWith(header)) {
+            throw new IOException(
+                    "Client-Public-Key besitzt keinen gültigen Header."
+            );
+        }
 
-        if (!key.endsWith(footer))
-            throw new IOException("Client-Public-Key besitzt keinen gültigen Footer.");
+        if (!key.endsWith(footer)) {
+            throw new IOException(
+                    "Client-Public-Key besitzt keinen gültigen Footer."
+            );
+        }
 
         String content = key.substring(
                         header.length(),
-                        key.length() - footer.length())
+                        key.length() - footer.length()
+                )
                 .replaceAll("\\s", "");
 
-        if (content.isBlank())
-            throw new IOException("Client-Public-Key enthält keinen Base64-Inhalt.");
+        if (content.isBlank()) {
+            throw new IOException(
+                    "Client-Public-Key enthält keinen Base64-Inhalt."
+            );
+        }
 
         try {
             Base64.getDecoder().decode(content);
         } catch (IllegalArgumentException e) {
             throw new IOException(
-                    "Client-Public-Key enthält ungültige Base64-Daten.", e);
+                    "Client-Public-Key enthält ungültige Base64-Daten.",
+                    e
+            );
         }
 
         return key;
     }
 
-    private static String normalizeHost(String host) throws IOException {
+    private static String normalizeHost(String host)
+            throws IOException {
+
         host = host.trim();
 
-        while (host.endsWith("/"))
+        while (host.endsWith("/")) {
             host = host.substring(0, host.length() - 1);
+        }
 
-        if (host.startsWith("http://"))
+        if (host.startsWith("http://")) {
             throw new IOException(
-                    "HTTP ist nicht erlaubt. Bitte HTTPS verwenden.");
+                    "HTTP ist nicht erlaubt. Bitte HTTPS verwenden."
+            );
+        }
 
-        if (!host.startsWith("https://"))
+        if (!host.startsWith("https://")) {
             host = "https://" + host;
+        }
 
         try {
-            if (URI.create(host).getHost() == null)
+            if (URI.create(host).getHost() == null) {
                 throw new IOException("Ungültiger API-Host: " + host);
+            }
         } catch (IllegalArgumentException e) {
             throw new IOException("Ungültiger API-Host: " + host, e);
         }
@@ -423,20 +567,30 @@ public final class PermissionCache {
         return port == 443 ? host : host + ":" + port;
     }
 
-    private static String required(FileManager config, String key)
-            throws IOException {
+    private static String required(
+            FileManager config,
+            String key
+    ) throws IOException {
 
         String value = config.getYamlValue(key);
 
-        if (value == null || value.isBlank() || value.equalsIgnoreCase("null"))
-            throw new IOException("Kein " + key + " in CoreMod/api.yml.");
+        if (value == null
+                || value.isBlank()
+                || value.equalsIgnoreCase("null")) {
+            throw new IOException(
+                    "Kein " + key + " in CoreMod/api.yml."
+            );
+        }
 
         return value;
     }
 
     private static String str(JsonObject object, String key) {
-        if (object == null || !object.has(key) || object.get(key).isJsonNull())
+        if (object == null
+                || !object.has(key)
+                || object.get(key).isJsonNull()) {
             return null;
+        }
 
         try {
             return object.get(key).getAsString();
@@ -453,16 +607,23 @@ public final class PermissionCache {
             JsonObject primary,
             JsonObject fallback,
             String key,
-            int def) {
-
+            int def
+    ) {
         try {
-            if (primary != null && primary.has(key) && !primary.get(key).isJsonNull())
+            if (primary != null
+                    && primary.has(key)
+                    && !primary.get(key).isJsonNull()) {
                 return primary.get(key).getAsInt();
+            }
 
-            if (fallback != null && fallback.has(key) && !fallback.get(key).isJsonNull())
+            if (fallback != null
+                    && fallback.has(key)
+                    && !fallback.get(key).isJsonNull()) {
                 return fallback.get(key).getAsInt();
+            }
 
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         return def;
     }
@@ -471,16 +632,23 @@ public final class PermissionCache {
             JsonObject primary,
             JsonObject fallback,
             String key,
-            double def) {
-
+            double def
+    ) {
         try {
-            if (primary != null && primary.has(key) && !primary.get(key).isJsonNull())
+            if (primary != null
+                    && primary.has(key)
+                    && !primary.get(key).isJsonNull()) {
                 return primary.get(key).getAsDouble();
+            }
 
-            if (fallback != null && fallback.has(key) && !fallback.get(key).isJsonNull())
+            if (fallback != null
+                    && fallback.has(key)
+                    && !fallback.get(key).isJsonNull()) {
                 return fallback.get(key).getAsDouble();
+            }
 
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
 
         return def;
     }
@@ -488,12 +656,15 @@ public final class PermissionCache {
     private static boolean bool(
             JsonObject object,
             String key,
-            boolean def) {
-
+            boolean def
+    ) {
         try {
-            return object == null || !object.has(key) || object.get(key).isJsonNull()
+            return object == null
+                    || !object.has(key)
+                    || object.get(key).isJsonNull()
                     ? def
                     : object.get(key).getAsBoolean();
+
         } catch (Exception e) {
             return def;
         }
@@ -501,16 +672,24 @@ public final class PermissionCache {
 
     public static CompletableFuture<Void> loadAsync(
             String shortUuid,
-            String username) {
-
+            String username
+    ) {
         return CompletableFuture.runAsync(() -> {
             try {
                 load(shortUuid, username);
             } catch (Exception e) {
-                System.err.println("[PermissionCache] Fehler beim asynchronen Laden");
-                System.err.println("[PermissionCache] Spieler: " + username);
-                System.err.println("[PermissionCache] UUID: " + shortUuid);
-                System.err.println("[PermissionCache] Ursache: " + e.getMessage());
+                System.err.println(
+                        "[PermissionCache] Fehler beim asynchronen Laden"
+                );
+                System.err.println(
+                        "[PermissionCache] Spieler: " + username
+                );
+                System.err.println(
+                        "[PermissionCache] UUID: " + shortUuid
+                );
+                System.err.println(
+                        "[PermissionCache] Ursache: " + e.getMessage()
+                );
                 e.printStackTrace();
             }
         });
@@ -521,33 +700,35 @@ public final class PermissionCache {
             try {
                 load(uuid);
             } catch (Exception e) {
-                System.err.println("[PermissionCache] Fehler beim asynchronen Laden");
-                System.err.println("[PermissionCache] UUID: " + uuid);
-                System.err.println("[PermissionCache] Ursache: " + e.getMessage());
+                System.err.println(
+                        "[PermissionCache] Fehler beim asynchronen Laden"
+                );
+                System.err.println(
+                        "[PermissionCache] UUID: " + uuid
+                );
+                System.err.println(
+                        "[PermissionCache] Ursache: " + e.getMessage()
+                );
                 e.printStackTrace();
             }
         });
     }
 
     public static boolean hasGroup(UUID uuid, String group) {
-        if (uuid == null || group == null || group.isBlank())
+        if (uuid == null || group == null || group.isBlank()) {
             return false;
+        }
 
         PlayerPermission permission = CACHE.get(uuid);
 
-        return permission != null &&
-                permission.lpGroup() != null &&
-                permission.lpGroup().equalsIgnoreCase(group);
+        return permission != null
+                && permission.lpGroup() != null
+                && permission.lpGroup().equalsIgnoreCase(group);
     }
 
     public static String getRole(UUID uuid) {
         PlayerPermission permission = CACHE.get(uuid);
         return permission == null ? "Spieler" : permission.role();
-    }
-
-    public static String getLpGroup(UUID uuid) {
-        PlayerPermission permission = CACHE.get(uuid);
-        return permission == null ? "default" : permission.lpGroup();
     }
 
     public static PlayerPermission get(UUID uuid) {
@@ -563,8 +744,9 @@ public final class PermissionCache {
     }
 
     public static void remove(UUID uuid) {
-        if (uuid != null)
+        if (uuid != null) {
             CACHE.remove(uuid);
+        }
     }
 
     public static Set<UUID> getCachedPlayers() {
@@ -589,5 +771,6 @@ public final class PermissionCache {
             String bannedUntil,
             boolean banned,
             String warningMessage
-    ) {}
+    ) {
+    }
 }

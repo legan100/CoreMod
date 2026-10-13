@@ -1,0 +1,16 @@
+# Gradle & Build
+.gradle/
+build/
+out/
+repo/
+
+# IntelliJ
+.idea/
+*.iml
+
+# Entwicklungs-Server/-Client (Welt, Logs, Konfig)
+run/
+runs/
+
+# Schlüssel nie committen
+*.pem

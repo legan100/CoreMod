@@ -1,6 +1,8 @@
 package de.niconagel.coremod.commands;
 
 import com.mojang.brigadier.CommandDispatcher;
+import de.niconagel.coremod.api.Permissions;
+import de.niconagel.coremod.permission.PermissionManager;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -13,6 +15,7 @@ public class Color {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("color")
+                        .requires(PermissionManager.require(Permissions.COMMAND_COLOR))
                         .executes(context -> {
 
                             ServerPlayer player = context.getSource().getPlayerOrException();

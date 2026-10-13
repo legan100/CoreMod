@@ -1,6 +1,7 @@
 package de.niconagel.coremod.listener;
 
 import net.minecraft.server.level.ServerLevel;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -9,7 +10,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
-@EventBusSubscriber
+@EventBusSubscriber(value = Dist.DEDICATED_SERVER)
 public class RealTimeMinecraftDay {
 
     private static final ZoneId ZONE = ZoneId.of("Europe/Berlin");
