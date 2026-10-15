@@ -121,17 +121,57 @@ public final class CoremodClient {
         }
     }
 
+    /** Wo der Fahrdienstleiter erscheint, mit Blickrichtung. */
+    public record Spawn(double x, double y, double z, float yaw, float pitch) {
+        static final StreamCodec<ByteBuf, Spawn> CODEC = StreamCodec.composite(
+                ByteBufCodecs.DOUBLE, Spawn::x,
+                ByteBufCodecs.DOUBLE, Spawn::y,
+                ByteBufCodecs.DOUBLE, Spawn::z,
+                ByteBufCodecs.FLOAT, Spawn::yaw,
+                ByteBufCodecs.FLOAT, Spawn::pitch,
+                Spawn::new);
+    }
+
+    /** Begehbarer Bereich eines Stellwerks: Quader aus ganzen Blöcken, beide Ecken eingeschlossen. */
+    public record Bereich(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        static final StreamCodec<ByteBuf, Bereich> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, Bereich::minX,
+                ByteBufCodecs.VAR_INT, Bereich::minY,
+                ByteBufCodecs.VAR_INT, Bereich::minZ,
+                ByteBufCodecs.VAR_INT, Bereich::maxX,
+                ByteBufCodecs.VAR_INT, Bereich::maxY,
+                ByteBufCodecs.VAR_INT, Bereich::maxZ,
+                Bereich::new);
+
+        /** "12 × 4 × 8" */
+        String size() {
+            return (maxX - minX + 1) + " × " + (maxY - minY + 1) + " × " + (maxZ - minZ + 1);
+        }
+    }
+
+    /** Stellwerk für Fahrdienstleiter. */
+    public record Stellwerk(String id, String name, String dimension, Spawn spawn, Bereich bereich) {
+        static final StreamCodec<ByteBuf, List<Stellwerk>> LIST = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, Stellwerk::id,
+                ByteBufCodecs.STRING_UTF8, Stellwerk::name,
+                ByteBufCodecs.STRING_UTF8, Stellwerk::dimension,
+                Spawn.CODEC, Stellwerk::spawn,
+                Bereich.CODEC, Stellwerk::bereich,
+                Stellwerk::new).apply(ByteBufCodecs.list());
+    }
+
     // ---------------------------------------------------------------- Hauptmenü
 
     /** Server → Client: Hauptmenü öffnen bzw. die wählbaren Jobs aktualisieren. Strecken usw. nur für Triebfahrzeugführer. */
-    public record OpenMenu(List<JobEntry> jobs, List<Strecke> strecken, Zugdaten zugdaten, List<Abstellung> abstellungen)
-            implements CustomPacketPayload {
+    public record OpenMenu(List<JobEntry> jobs, List<Strecke> strecken, Zugdaten zugdaten, List<Abstellung> abstellungen,
+                           List<Stellwerk> stellwerke) implements CustomPacketPayload {
         public static final Type<OpenMenu> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "open_main_menu"));
         public static final StreamCodec<ByteBuf, OpenMenu> CODEC = StreamCodec.composite(
                 JobEntry.CODEC.apply(ByteBufCodecs.list()), OpenMenu::jobs,
                 Strecke.LIST, OpenMenu::strecken,
                 Zugdaten.CODEC, OpenMenu::zugdaten,
                 Abstellung.LIST, OpenMenu::abstellungen,
+                Stellwerk.LIST, OpenMenu::stellwerke,
                 OpenMenu::new);
 
         @Override
@@ -201,9 +241,10 @@ public final class CoremodClient {
      * @param broken IDs der Gleise, deren Spline es nicht mehr gibt
      */
     public record OpenEditor(int editor, List<Strecke> strecken, Zugdaten zugdaten, List<Abstellung> abstellungen,
-                             List<String> broken) implements CustomPacketPayload {
+                             List<String> broken, List<Stellwerk> stellwerke) implements CustomPacketPayload {
         static final int ROUTES = 0;
         static final int TRAINS = 1;
+        static final int SPAWNS = 2;
 
         public static final Type<OpenEditor> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "open_editor"));
         public static final StreamCodec<ByteBuf, OpenEditor> CODEC = StreamCodec.composite(
@@ -212,6 +253,7 @@ public final class CoremodClient {
                 Zugdaten.CODEC, OpenEditor::zugdaten,
                 Abstellung.LIST, OpenEditor::abstellungen,
                 ByteBufCodecs.STRING_UTF8.apply(ByteBufCodecs.list()), OpenEditor::broken,
+                Stellwerk.LIST, OpenEditor::stellwerke,
                 OpenEditor::new);
 
         @Override
@@ -361,6 +403,61 @@ public final class CoremodClient {
         }
     }
 
+    // ---------------------------------------------------------------- Stellwerke
+
+    /** Client → Server: alle Stellwerke nach einer Änderung im Stellwerks-Editor. */
+    public record SaveStellwerke(List<Stellwerk> stellwerke) implements CustomPacketPayload {
+        public static final Type<SaveStellwerke> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "save_stellwerke"));
+        public static final StreamCodec<ByteBuf, SaveStellwerke> CODEC = Stellwerk.LIST.map(SaveStellwerke::new, SaveStellwerke::stellwerke);
+
+        @Override
+        public Type<SaveStellwerke> type() {
+            return TYPE;
+        }
+    }
+
+    /** Client → Server: Spawn und Bereich in der Welt setzen, für ein neues Stellwerk ({@code id} leer) oder ein vorhandenes. */
+    public record StartStellwerk(String id, String name) implements CustomPacketPayload {
+        public static final Type<StartStellwerk> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "start_stellwerk"));
+        public static final StreamCodec<ByteBuf, StartStellwerk> CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, StartStellwerk::id,
+                ByteBufCodecs.STRING_UTF8, StartStellwerk::name,
+                StartStellwerk::new);
+
+        @Override
+        public Type<StartStellwerk> type() {
+            return TYPE;
+        }
+    }
+
+    /** Client → Server: Taste beim Einrichten, siehe {@link BereichAuswahl}. */
+    public record BereichKey(int action) implements CustomPacketPayload {
+        public static final Type<BereichKey> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "bereich_key"));
+        public static final StreamCodec<ByteBuf, BereichKey> CODEC = ByteBufCodecs.VAR_INT.map(BereichKey::new, BereichKey::action);
+
+        @Override
+        public Type<BereichKey> type() {
+            return TYPE;
+        }
+    }
+
+    /** Server → Client: Stand beim Einrichten, {@code step} 1 = Spawn, 2 = erste Ecke, 3 = zweite Ecke, 0 = fertig. */
+    public record BereichState(int step, String name, List<Vector3f> spawn, List<Vector3f> corner) implements CustomPacketPayload {
+        static final BereichState INACTIVE = new BereichState(0, "", List.of(), List.of());
+        public static final Type<BereichState> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "bereich_state"));
+        public static final StreamCodec<ByteBuf, BereichState> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, BereichState::step,
+                ByteBufCodecs.STRING_UTF8, BereichState::name,
+                LINE, BereichState::spawn,
+                LINE, BereichState::corner,
+                BereichState::new);
+
+        @Override
+        public Type<BereichState> type() {
+            return TYPE;
+        }
+    }
+
     // ---------------------------------------------------------------- Empfangen
 
     /** Abbrechen bleibt in der Welt bei den Haltepunkten, der Server wartet weiter. */
@@ -375,7 +472,19 @@ public final class CoremodClient {
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         // optional: Server ohne CoreMod lassen sich trotzdem betreten
-        PayloadRegistrar registrar = event.registrar("11").optional();
+        PayloadRegistrar registrar = event.registrar("12").optional();
+
+        // Stellwerke
+        registrar.playToServer(SaveStellwerke.TYPE, SaveStellwerke.CODEC, (payload, context) -> {
+            // kommt nur beim Server an
+        });
+        registrar.playToServer(StartStellwerk.TYPE, StartStellwerk.CODEC, (payload, context) -> {
+            // kommt nur beim Server an
+        });
+        registrar.playToServer(BereichKey.TYPE, BereichKey.CODEC, (payload, context) -> {
+            // kommt nur beim Server an
+        });
+        registrar.playToClient(BereichState.TYPE, BereichState.CODEC, (payload, context) -> BereichAuswahl.update(payload));
 
         registrar.playToClient(Started.TYPE, Started.CODEC, (payload, context) -> MainMenuClient.started());
         registrar.playToClient(FadeToMenu.TYPE, FadeToMenu.CODEC, (payload, context) -> Abblende.toMenu());
@@ -383,7 +492,7 @@ public final class CoremodClient {
 
         // Hauptmenü
         registrar.playToClient(OpenMenu.TYPE, OpenMenu.CODEC,
-                (payload, context) -> MainMenuClient.open(payload.jobs(), payload.strecken(), payload.zugdaten(), payload.abstellungen()));
+                (payload, context) -> MainMenuClient.open(payload.jobs(), payload.strecken(), payload.zugdaten(), payload.abstellungen(), payload.stellwerke()));
         registrar.playToServer(Play.TYPE, Play.CODEC, (payload, context) -> {
             // kommt nur beim Server an
         });
@@ -392,7 +501,8 @@ public final class CoremodClient {
         registrar.playToClient(OpenEditor.TYPE, OpenEditor.CODEC, (payload, context) -> Minecraft.getInstance().setScreen(switch (payload.editor()) {
             case OpenEditor.ROUTES -> new RouteEditorScreen(payload.strecken(), payload.zugdaten(), payload.abstellungen());
             case OpenEditor.TRAINS -> new TrainEditorScreen(payload.strecken(), payload.zugdaten());
-            default -> new SpawnEditorScreen(payload.abstellungen(), payload.broken());
+            case OpenEditor.SPAWNS -> new SpawnEditorScreen(payload.abstellungen(), payload.broken());
+            default -> new StellwerkEditorScreen(payload.stellwerke());
         }));
         registrar.playToServer(SaveStrecken.TYPE, SaveStrecken.CODEC, (payload, context) -> {
             // kommt nur beim Server an

@@ -42,6 +42,8 @@ public class MainMenuScreen extends Screen {
 
     /** Job-Id des Triebfahrzeugführers (Job.TF in der Server-Mod): statt direkt zu starten geht es zur Streckenwahl. */
     private static final String TF = "TF";
+    /** Job-Id des Fahrdienstleiters (Job.FDL in der Server-Mod): erst das Stellwerk wählen. */
+    private static final String FDL = "FDL";
 
     private static final int BUTTON_WIDTH = 200;
     private static final int BUTTON_HEIGHT = 20;
@@ -100,6 +102,8 @@ public class MainMenuScreen extends Screen {
             Button button = button(job.name(), b -> {
                 if (job.id().equals(TF)) {
                     open(() -> streckenPage(job));
+                } else if (job.id().equals(FDL)) {
+                    open(() -> stellwerkPage(job));
                 } else {
                     MainMenuClient.play(job, "");
                 }
@@ -108,6 +112,18 @@ public class MainMenuScreen extends Screen {
             buttons.add(button);
         }
         return subPage(Component.literal("Wähle deinen Job"), List.of(), buttons);
+    }
+
+    /** Fahrdienstleiter: ein Knopf je Stellwerk, ein Klick startet dort. */
+    private Page stellwerkPage(CoremodClient.JobEntry fdl) {
+        List<Button> buttons = new ArrayList<>();
+        for (CoremodClient.Stellwerk stellwerk : MainMenuClient.stellwerke) {
+            Button button = button(stellwerk.name(), b -> MainMenuClient.play(fdl, stellwerk.id()));
+            button.setTooltip(Tooltip.create(Component.literal("Bereich " + stellwerk.bereich().size() + " Blöcke")));
+            buttons.add(button);
+        }
+        List<Component> lines = buttons.isEmpty() ? List.of(gray("Noch keine Stellwerke eingerichtet.")) : List.of();
+        return subPage(Component.literal("Wähle ein Stellwerk"), lines, buttons);
     }
 
     private Page streckenPage(CoremodClient.JobEntry tf) {

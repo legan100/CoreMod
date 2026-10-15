@@ -3,6 +3,8 @@ package de.niconagel.coremod.mainmenu;
 import de.niconagel.coremod.Coremod;
 import de.niconagel.coremod.api.Job;
 import de.niconagel.coremod.api.Permissions;
+import de.niconagel.coremod.fdl.StellwerkAuswahl;
+import de.niconagel.coremod.fdl.Stellwerke;
 import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.tf.Abstellungen;
 import de.niconagel.coremod.tf.Fahrzeugkatalog;
@@ -105,6 +107,31 @@ public final class MainMenuNetwork {
 
     private static final StreamCodec<ByteBuf, List<Vector3f>> LINE = ByteBufCodecs.VECTOR3F.apply(ByteBufCodecs.list());
 
+    private static final StreamCodec<ByteBuf, Stellwerke.Spawn> SPAWN = StreamCodec.composite(
+            ByteBufCodecs.DOUBLE, Stellwerke.Spawn::x,
+            ByteBufCodecs.DOUBLE, Stellwerke.Spawn::y,
+            ByteBufCodecs.DOUBLE, Stellwerke.Spawn::z,
+            ByteBufCodecs.FLOAT, Stellwerke.Spawn::yaw,
+            ByteBufCodecs.FLOAT, Stellwerke.Spawn::pitch,
+            Stellwerke.Spawn::new);
+
+    private static final StreamCodec<ByteBuf, Stellwerke.Bereich> BEREICH = StreamCodec.composite(
+            ByteBufCodecs.VAR_INT, Stellwerke.Bereich::minX,
+            ByteBufCodecs.VAR_INT, Stellwerke.Bereich::minY,
+            ByteBufCodecs.VAR_INT, Stellwerke.Bereich::minZ,
+            ByteBufCodecs.VAR_INT, Stellwerke.Bereich::maxX,
+            ByteBufCodecs.VAR_INT, Stellwerke.Bereich::maxY,
+            ByteBufCodecs.VAR_INT, Stellwerke.Bereich::maxZ,
+            Stellwerke.Bereich::new);
+
+    private static final StreamCodec<ByteBuf, List<Stellwerke.Stellwerk>> STELLWERKE = StreamCodec.composite(
+            ByteBufCodecs.STRING_UTF8, Stellwerke.Stellwerk::id,
+            ByteBufCodecs.STRING_UTF8, Stellwerke.Stellwerk::name,
+            ByteBufCodecs.STRING_UTF8, Stellwerke.Stellwerk::dimension,
+            SPAWN, Stellwerke.Stellwerk::spawn,
+            BEREICH, Stellwerke.Stellwerk::bereich,
+            Stellwerke.Stellwerk::new).apply(ByteBufCodecs.list());
+
     // ---------------------------------------------------------------- Hauptmenü
 
     /** Ein wählbarer Job, als Text: die Client-Mod kennt das Job-Enum nicht. */
@@ -139,18 +166,23 @@ public final class MainMenuNetwork {
      * Strecken, Zugdaten und Abstellungen nur, wenn der Spieler Triebfahrzeugführer wählen darf, sonst leer.
      */
     public record OpenMenu(List<JobEntry> jobs, List<Strecken.Strecke> strecken, Zugdaten zugdaten,
-                           List<Abstellungen.Abstellung> abstellungen) implements CustomPacketPayload {
+                           List<Abstellungen.Abstellung> abstellungen, List<Stellwerke.Stellwerk> stellwerke) implements CustomPacketPayload {
         public static final Type<OpenMenu> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "open_main_menu"));
         public static final StreamCodec<ByteBuf, OpenMenu> CODEC = StreamCodec.composite(
                 JobEntry.CODEC.apply(ByteBufCodecs.list()), OpenMenu::jobs,
                 STRECKEN, OpenMenu::strecken,
                 Zugdaten.CODEC, OpenMenu::zugdaten,
                 ABSTELLUNGEN, OpenMenu::abstellungen,
+                STELLWERKE, OpenMenu::stellwerke,
                 OpenMenu::new);
 
-        static OpenMenu of(List<JobEntry> jobs, boolean tf) {
-            return tf ? new OpenMenu(jobs, Strecken.all(), Zugdaten.current(), Abstellungen.all())
-                    : new OpenMenu(jobs, List.of(), Zugdaten.NONE, List.of());
+        /** Strecken usw. nur für Triebfahrzeugführer, Stellwerke nur für Fahrdienstleiter. */
+        static OpenMenu of(List<JobEntry> jobs, boolean tf, boolean fdl) {
+            return new OpenMenu(jobs,
+                    tf ? Strecken.all() : List.of(),
+                    tf ? Zugdaten.current() : Zugdaten.NONE,
+                    tf ? Abstellungen.all() : List.of(),
+                    fdl ? Stellwerke.all() : List.of());
         }
 
         @Override
@@ -227,10 +259,12 @@ public final class MainMenuNetwork {
      * @param broken IDs der Gleise, deren Spline es nicht mehr gibt (umgebaut oder abgerissen)
      */
     public record OpenEditor(int editor, List<Strecken.Strecke> strecken, Zugdaten zugdaten,
-                             List<Abstellungen.Abstellung> abstellungen, List<String> broken) implements CustomPacketPayload {
+                             List<Abstellungen.Abstellung> abstellungen, List<String> broken,
+                             List<Stellwerke.Stellwerk> stellwerke) implements CustomPacketPayload {
         public static final int ROUTES = 0;
         public static final int TRAINS = 1;
         public static final int SPAWNS = 2;
+        public static final int STELLWERK = 3;
 
         public static final Type<OpenEditor> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "open_editor"));
         public static final StreamCodec<ByteBuf, OpenEditor> CODEC = StreamCodec.composite(
@@ -239,6 +273,7 @@ public final class MainMenuNetwork {
                 Zugdaten.CODEC, OpenEditor::zugdaten,
                 ABSTELLUNGEN, OpenEditor::abstellungen,
                 ByteBufCodecs.STRING_UTF8.apply(ByteBufCodecs.list()), OpenEditor::broken,
+                STELLWERKE, OpenEditor::stellwerke,
                 OpenEditor::new);
 
         public static OpenEditor of(int editor) {
@@ -246,7 +281,7 @@ public final class MainMenuNetwork {
                     .filter(gleis -> !Gleisnetz.exists(gleis.dimension(), gleis.start()) || !Gleisnetz.exists(gleis.dimension(), gleis.end()))
                     .map(Abstellungen.Gleis::id)
                     .toList();
-            return new OpenEditor(editor, Strecken.all(), Zugdaten.current(), Abstellungen.all(), broken);
+            return new OpenEditor(editor, Strecken.all(), Zugdaten.current(), Abstellungen.all(), broken, Stellwerke.all());
         }
 
         @Override
@@ -403,6 +438,64 @@ public final class MainMenuNetwork {
         }
     }
 
+    // ---------------------------------------------------------------- Stellwerke
+
+    /** Client → Server: alle Stellwerke nach einer Änderung im Stellwerks-Editor. */
+    public record SaveStellwerke(List<Stellwerke.Stellwerk> stellwerke) implements CustomPacketPayload {
+        public static final Type<SaveStellwerke> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "save_stellwerke"));
+        public static final StreamCodec<ByteBuf, SaveStellwerke> CODEC = STELLWERKE.map(SaveStellwerke::new, SaveStellwerke::stellwerke);
+
+        @Override
+        public Type<SaveStellwerke> type() {
+            return TYPE;
+        }
+    }
+
+    /** Client → Server: Spawn und Bereich in der Welt setzen, für ein neues Stellwerk ({@code id} leer) oder ein vorhandenes. */
+    public record StartStellwerk(String id, String name) implements CustomPacketPayload {
+        public static final Type<StartStellwerk> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "start_stellwerk"));
+        public static final StreamCodec<ByteBuf, StartStellwerk> CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, StartStellwerk::id,
+                ByteBufCodecs.STRING_UTF8, StartStellwerk::name,
+                StartStellwerk::new);
+
+        @Override
+        public Type<StartStellwerk> type() {
+            return TYPE;
+        }
+    }
+
+    /** Client → Server: Taste beim Einrichten, siehe {@link StellwerkAuswahl#SET}, {@link StellwerkAuswahl#UNDO}, {@link StellwerkAuswahl#CANCEL}. */
+    public record BereichKey(int action) implements CustomPacketPayload {
+        public static final Type<BereichKey> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "bereich_key"));
+        public static final StreamCodec<ByteBuf, BereichKey> CODEC = ByteBufCodecs.VAR_INT.map(BereichKey::new, BereichKey::action);
+
+        @Override
+        public Type<BereichKey> type() {
+            return TYPE;
+        }
+    }
+
+    /**
+     * Server → Client: Stand beim Einrichten eines Stellwerks. {@code step}: 1 = Spawn, 2 = erste Ecke, 3 = zweite Ecke,
+     * 0 = fertig. {@code spawn} und {@code corner} sind leer oder ein Punkt.
+     */
+    public record BereichState(int step, String name, List<Vector3f> spawn, List<Vector3f> corner) implements CustomPacketPayload {
+        public static final BereichState INACTIVE = new BereichState(0, "", List.of(), List.of());
+        public static final Type<BereichState> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "bereich_state"));
+        public static final StreamCodec<ByteBuf, BereichState> CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, BereichState::step,
+                ByteBufCodecs.STRING_UTF8, BereichState::name,
+                LINE, BereichState::spawn,
+                LINE, BereichState::corner,
+                BereichState::new);
+
+        @Override
+        public Type<BereichState> type() {
+            return TYPE;
+        }
+    }
+
     // ---------------------------------------------------------------- Empfangen
 
     private interface IoAction {
@@ -430,7 +523,20 @@ public final class MainMenuNetwork {
 
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("11");
+        PayloadRegistrar registrar = event.registrar("12");
+
+        // Stellwerke
+        registrar.playToServer(SaveStellwerke.TYPE, SaveStellwerke.CODEC,
+                (payload, context) -> save((ServerPlayer) context.player(), "Stellwerke", () -> Stellwerke.save(payload.stellwerke())));
+        registrar.playToServer(StartStellwerk.TYPE, StartStellwerk.CODEC, (payload, context) -> {
+            ServerPlayer player = (ServerPlayer) context.player();
+            if (mayEdit(player)) StellwerkAuswahl.start(player, payload.id(), payload.name());
+        });
+        registrar.playToServer(BereichKey.TYPE, BereichKey.CODEC,
+                (payload, context) -> StellwerkAuswahl.key((ServerPlayer) context.player(), payload.action()));
+        registrar.playToClient(BereichState.TYPE, BereichState.CODEC, (payload, context) -> {
+            // kommt nur beim Client an
+        });
 
         registrar.playToClient(Started.TYPE, Started.CODEC, (payload, context) -> {
             // kommt nur beim Client an

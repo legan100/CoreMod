@@ -96,6 +96,46 @@ public final class Zugeinsatz {
         train.setBrake(1);
     }
 
+    /**
+     * Der Punkt des Zugs, der {@code point} am nächsten liegt. Jedes Fahrzeug zählt als Strecke von seiner hinteren zur
+     * vorderen Kupplung, so ist der ganze Zug abgedeckt, auch in Kurven.
+     *
+     * @return null, wenn es den Zug nicht mehr gibt
+     */
+    public static Vec3 nearestPoint(ServerLevel level, UUID trainId, Vec3 point) {
+        Train train = ForgeTrains.get(level).simulation().train(trainId);
+        if (train == null) return null;
+
+        TrackView view = ForgeTrains.trackView(level.dimension().location().toString());
+        RollingStockModule module = ForgePlatformBootstrap.bootstrap().rollingStockModule();
+        Vec3 best = null;
+        for (RailVehicle vehicle : train.vehicles()) {
+            if (vehicle.trackPosition() == null || !view.contains(vehicle.trackPosition())) continue;
+            TrackGeometrySample sample = view.sample(vehicle.trackPosition());
+            Vec3 center = vec(sample.position());
+            // Die Position schaut zur Vorderseite des Fahrzeugs
+            Vec3 forward = vec(sample.tangent()).normalize();
+            VehicleShape shape = module.shape(vehicle.definition());
+            Vec3 front = center.add(forward.scale(shape.frontReach(vehicle.definition())));
+            Vec3 rear = center.subtract(forward.scale(shape.rearReach(vehicle.definition())));
+
+            Vec3 onVehicle = nearestOnSegment(point, rear, front);
+            if (best == null || onVehicle.distanceToSqr(point) < best.distanceToSqr(point)) best = onVehicle;
+        }
+        return best;
+    }
+
+    private static Vec3 nearestOnSegment(Vec3 p, Vec3 a, Vec3 b) {
+        Vec3 ab = b.subtract(a);
+        double lengthSq = ab.lengthSqr();
+        double t = lengthSq < 1.0E-9 ? 0 : Math.clamp(p.subtract(a).dot(ab) / lengthSq, 0.0, 1.0);
+        return a.add(ab.scale(t));
+    }
+
+    private static Vec3 vec(Vector3 v) {
+        return new Vec3(v.x(), v.y(), v.z());
+    }
+
     /** Nimmt den ganzen Zug vom Gleis. */
     public static void remove(ServerLevel level, UUID trainId) {
         ForgeTrains trains = ForgeTrains.get(level);

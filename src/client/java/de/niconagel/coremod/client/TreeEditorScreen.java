@@ -69,6 +69,11 @@ abstract class TreeEditorScreen extends Screen {
 
     protected abstract String searchHint();
 
+    /** false = flache Liste ohne Pfeil und ohne Inhalt (z.B. Stellwerke). */
+    protected boolean expandable() {
+        return true;
+    }
+
     // ---------------------------------------------------------------- Aufbau
 
     @Override
@@ -202,6 +207,7 @@ abstract class TreeEditorScreen extends Screen {
             rowWidth = width;
             renderFolder(graphics, index, left + 6, top);
 
+            if (!expandable()) return;
             int arrowX = left + width - ARROW_WIDTH;
             graphics.fill(arrowX, top, arrowX + 1, top + height, 0x40FFFFFF);
             if (hovering && mouseX >= arrowX) {
@@ -212,7 +218,7 @@ abstract class TreeEditorScreen extends Screen {
 
         @Override
         public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            if (mouseX >= rowLeft + rowWidth - ARROW_WIDTH) {
+            if (expandable() && mouseX >= rowLeft + rowWidth - ARROW_WIDTH) {
                 toggle(index);
                 return false;
             }

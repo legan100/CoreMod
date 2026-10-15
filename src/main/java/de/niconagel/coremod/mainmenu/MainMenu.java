@@ -6,12 +6,15 @@ import com.google.gson.JsonParseException;
 import com.mojang.logging.LogUtils;
 import de.niconagel.coremod.Coremod;
 import de.niconagel.coremod.api.Job;
+import de.niconagel.coremod.fdl.Stellwerke;
+import de.niconagel.coremod.fdl.Stellwerksgrenze;
 import de.niconagel.coremod.permission.PermissionListener;
 import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.tf.Abstellungen;
 import de.niconagel.coremod.tf.Garnituren;
 import de.niconagel.coremod.tf.Strecken;
 import de.niconagel.coremod.tf.Zugeinsatz;
+import de.niconagel.coremod.utils.Grenze;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -90,6 +93,8 @@ public final class MainMenu {
     private static final int FADE = 30;
     /** Alle so viele Ticks wird die Lage zum nächsten Halt geprüft; kurz, damit kein schneller Zug unbemerkt durchrutscht. */
     private static final int CHECK = 5;
+    /** So weit (m) darf sich ein Triebfahrzeugführer vom nächsten Punkt seines Zugs entfernen. */
+    private static final double MAX_FROM_TRAIN = 20;
 
     /** Gestartete Route: wo der Zug ist und wie weit das Ende schon ist. */
     private static final class Fahrt {
@@ -181,6 +186,8 @@ public final class MainMenu {
 
     /** Beim Join und am Ende einer Fahrt: an die View, unsichtbar und schwebend, und das Menü auf. */
     private static void enterMenu(ServerPlayer player) {
+        // Im Menü darf man überall hin, die Stellwerksgrenze gilt erst wieder nach der nächsten Wahl
+        Stellwerksgrenze.leave(player);
         // Nur merken, wenn noch nichts gemerkt ist: Wer beim letzten Mal im Menü gegangen ist, steht jetzt an der View
         CompoundTag data = player.getPersistentData();
         if (!data.contains(RETURN_KEY)) {
@@ -211,12 +218,14 @@ public final class MainMenu {
                 .map(MainMenuNetwork.JobEntry::of)
                 .toList();
         boolean tf = PermissionManager.has(player.getUUID(), Job.TF.getPermission());
-        PacketDistributor.sendToPlayer(player, MainMenuNetwork.OpenMenu.of(jobs, tf));
+        boolean fdl = PermissionManager.has(player.getUUID(), Job.FDL.getPermission());
+        PacketDistributor.sendToPlayer(player, MainMenuNetwork.OpenMenu.of(jobs, tf, fdl));
     }
 
     /**
      * Job im Menü gewählt: ab jetzt gelten seine Rechte. Triebfahrzeugführer starten eine Route: Der Zug wird in deren
-     * Abstellung eingesetzt und der Spieler daneben gestellt; klappt das nicht, bleibt er im Menü.
+     * Abstellung eingesetzt und der Spieler daneben gestellt; Fahrdienstleiter erscheinen am Spawn ihres Stellwerks und
+     * dürfen dessen Bereich nicht verlassen. Klappt etwas nicht, bleibt der Spieler im Menü.
      */
     static void play(ServerPlayer player, Job job, String routeNumber) {
         UUID uuid = player.getUUID();
@@ -253,11 +262,22 @@ public final class MainMenu {
             }
         }
 
+        // Fahrdienstleiter: das gewählte Stellwerk (über "route" kommt dessen ID)
+        Stellwerke.Stellwerk stellwerk = null;
+        if (job == Job.FDL) {
+            stellwerk = Stellwerke.find(routeNumber);
+            if (stellwerk == null) {
+                player.sendSystemMessage(Component.literal("Das Stellwerk gibt es nicht mehr.").withStyle(ChatFormatting.RED));
+                sendMenu(player);
+                return;
+            }
+        }
+
         IN_MENU.remove(uuid);
         JOBS.put(uuid, job);
         if (train != null) FAHRTEN.put(uuid, new Fahrt(route, train.train(), train.gleis().dimension()));
+        if (stellwerk != null) Stellwerksgrenze.enter(player, stellwerk.id());
 
-        // ponytail: FDL kommt vorerst auch an die gemerkte Stelle, eigener Einstieg folgt
         CompoundTag back = player.getPersistentData().getCompound(RETURN_KEY);
         player.getPersistentData().remove(RETURN_KEY);
 
@@ -278,6 +298,9 @@ public final class MainMenu {
             Vec3 at = train.front().add(-direction.z * 2.5, 0, direction.x * 2.5);
             float yaw = (float) Math.toDegrees(Math.atan2(-direction.x, direction.z));
             player.teleportTo(level(player.server, train.gleis().dimension()), at.x, at.y, at.z, yaw, 0);
+        } else if (stellwerk != null) {
+            Stellwerke.Spawn spawn = stellwerk.spawn();
+            player.teleportTo(level(player.server, stellwerk.dimension()), spawn.x(), spawn.y(), spawn.z(), spawn.yaw(), spawn.pitch());
         } else if (!back.isEmpty()) {
             player.teleportTo(level(player.server, back.getString("dimension")),
                     back.getDouble("x"), back.getDouble("y"), back.getDouble("z"),
@@ -357,6 +380,7 @@ public final class MainMenu {
     private static void tickFahrt(ServerPlayer player, Fahrt fahrt) {
         int now = player.server.getTickCount();
         ServerLevel level = level(player.server, fahrt.dimension);
+        keepNearTrain(player, fahrt, level);
 
         if (fahrt.fadeAt >= 0) {
             if (!fahrt.fadeSent && now >= fahrt.fadeAt) {
@@ -395,6 +419,25 @@ public final class MainMenu {
                 fahrt.fadeAt = now + RETURN_DELAY;
             }
         }
+    }
+
+    /**
+     * Triebfahrzeugführer bleiben bei ihrem Zug: höchstens {@link #MAX_FROM_TRAIN} m vom nächsten Punkt des Zugs, also
+     * überall entlang der ganzen Länge, vor der Spitze und hinter dem Ende. Wer weiter weg ist, bekommt einen Stoß zurück.
+     */
+    private static void keepNearTrain(ServerPlayer player, Fahrt fahrt, ServerLevel level) {
+        // In eine andere Dimension gebracht (z.B. von einem Admin): nicht zurückholen
+        if (player.level() != level) return;
+        Vec3 position = player.position();
+        Vec3 nearest = Zugeinsatz.nearestPoint(level, fahrt.train, position);
+        // Zug weg: darum kümmert sich die Fahrt selbst
+        if (nearest == null) return;
+
+        Vec3 away = position.subtract(nearest);
+        if (away.length() <= MAX_FROM_TRAIN) return;
+        // Zurück an den Rand des Bereichs, einen Meter innen
+        Grenze.pushBack(player, nearest.add(away.normalize().scale(MAX_FROM_TRAIN - 1)),
+                "Du darfst dich nicht weiter als " + (int) MAX_FROM_TRAIN + " m von deinem Zug entfernen.");
     }
 
     /** Während der Zug festgehalten wird, vor MRs Physik (die im Post-Tick der Welt läuft): Tasten des Fahrers zählen nicht. */

@@ -22,6 +22,7 @@ import java.io.IOException;
  * /mainmenu routes                    → Routen-Editor: Strecken und Routen für Triebfahrzeugführer
  * /mainmenu routes trains             → Zug-Editor: Garnituren aus MR-Fahrzeugen
  * /mainmenu routes spawns             → Abstellungs-Editor: Gleise auf MR-Splines, auf denen Züge eingesetzt werden
+ * /mainmenu stellwerk                 → Stellwerks-Editor: Spawn und begehbarer Bereich für Fahrdienstleiter
  * /mainmenu setview                  → View = eigene Augenposition und Blickrichtung
  * /mainmenu setview &lt;x y z&gt; &lt;yaw pitch&gt; → View = angegebene Werte (Dimension = eigene)
  */
@@ -40,6 +41,8 @@ public final class MainMenuCommand {
                                         .executes(context -> openEditor(context.getSource(), MainMenuNetwork.OpenEditor.TRAINS)))
                                 .then(Commands.literal("spawns")
                                         .executes(context -> openEditor(context.getSource(), MainMenuNetwork.OpenEditor.SPAWNS))))
+                        .then(Commands.literal("stellwerk")
+                                .executes(context -> openEditor(context.getSource(), MainMenuNetwork.OpenEditor.STELLWERK)))
                         .then(Commands.literal("setview")
                                 .executes(context -> {
                                     ServerPlayer player = context.getSource().getPlayerOrException();

@@ -1,5 +1,6 @@
 package de.niconagel.coremod.utils;
 
+import de.niconagel.coremod.fdl.Stellwerke;
 import de.niconagel.coremod.permission.BuildZones;
 import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.tf.Abstellungen;
@@ -58,6 +59,7 @@ public class SetupManager {
         Strecken.load();
         Garnituren.load();
         Abstellungen.load();
+        Stellwerke.load();
     }
 
     public FileManager getRestFileManager() {

@@ -243,7 +243,7 @@ public final class Weltauswahl {
         for (int i = 0; i + 1 < line.size(); i++) segment(lines, pose, line.get(i), line.get(i + 1), rgb, alpha);
     }
 
-    private static void segment(VertexConsumer lines, PoseStack.Pose pose, Vector3f a, Vector3f b, int rgb, int alpha) {
+    static void segment(VertexConsumer lines, PoseStack.Pose pose, Vector3f a, Vector3f b, int rgb, int alpha) {
         Vector3f normal = new Vector3f(b).sub(a);
         if (normal.lengthSquared() < 1.0E-8f) return;
         normal.normalize();
@@ -258,7 +258,7 @@ public final class Weltauswahl {
     }
 
     /** Senkrechter Strich mit Kreuz am Fuß, gut zu sehen auch von weiter weg. */
-    private static void marker(VertexConsumer lines, PoseStack.Pose pose, Vector3f p, int rgb) {
+    static void marker(VertexConsumer lines, PoseStack.Pose pose, Vector3f p, int rgb) {
         segment(lines, pose, p, new Vector3f(p).add(0, 2.5f, 0), rgb, 255);
         segment(lines, pose, new Vector3f(p).add(-0.5f, 0, 0), new Vector3f(p).add(0.5f, 0, 0), rgb, 255);
         segment(lines, pose, new Vector3f(p).add(0, 0, -0.5f), new Vector3f(p).add(0, 0, 0.5f), rgb, 255);

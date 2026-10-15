@@ -34,6 +34,8 @@ public final class MainMenuClient {
     static Zugdaten zugdaten = Zugdaten.NONE;
     /** Vom Server: Abstellungen, für die Routendetails. */
     static List<CoremodClient.Abstellung> abstellungen = List.of();
+    /** Vom Server: Stellwerke für Fahrdienstleiter. */
+    static List<CoremodClient.Stellwerk> stellwerke = List.of();
 
     private MainMenuClient() {
     }
@@ -43,7 +45,7 @@ public final class MainMenuClient {
      * ein Start fehlgeschlagen ist (dann ohne Intro, das gibt es nur einmal pro Verbindung).
      */
     public static void open(List<CoremodClient.JobEntry> availableJobs, List<CoremodClient.Strecke> availableStrecken, Zugdaten trains,
-                            List<CoremodClient.Abstellung> availableAbstellungen) {
+                            List<CoremodClient.Abstellung> availableAbstellungen, List<CoremodClient.Stellwerk> availableStellwerke) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!inMenu) {
             previousHideGui = minecraft.options.hideGui;
@@ -53,6 +55,7 @@ public final class MainMenuClient {
         strecken = availableStrecken;
         zugdaten = trains;
         abstellungen = availableAbstellungen;
+        stellwerke = availableStellwerke;
 
         if (minecraft.screen instanceof MainMenuScreen screen) {
             // Knöpfe neu aufbauen, ohne das Intro neu zu starten
