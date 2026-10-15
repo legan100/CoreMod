@@ -25,3 +25,11 @@ type = "required"
 versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
+
+# Züge und Fahrzeugkatalog für Triebfahrzeugführer
+[[dependencies."${mod_id}"]]
+modId = "modernrailroading"
+type = "required"
+versionRange = "[1.0.0,)"
+ordering = "AFTER"
+side = "BOTH"
