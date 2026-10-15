@@ -63,6 +63,12 @@ public final class Permissions {
     public static final String GAMEMODE_CREATIVE = "minecraft.gamemode.creative";
     public static final String GAMEMODE_SPECTATOR = "minecraft.gamemode.spectator";
 
+    // ModernRailroading (fragt über NeoForges Permission-API, siehe CoreModPermissionHandler)
+    /** Gleise bauen und abreißen (zusätzlich Creative), Fahrzeuge einsetzen und entfernen, Zugnummern vergeben. */
+    public static final String MR_TRACK_EDIT = "modernrailroading.track.edit";
+    /** /mr switch und /mr dkw: Weichen stellen. */
+    public static final String MR_SWITCH = "modernrailroading.switch";
+
     // CoreMod-Befehle (alle Befehle folgen dem Schema "command.<name>", siehe command())
     public static final String COMMAND_UHRZEIT = command("uhrzeit");
     public static final String COMMAND_COLOR = command("color");
