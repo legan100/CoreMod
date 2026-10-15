@@ -2,6 +2,9 @@ package de.niconagel.coremod.utils;
 
 import de.niconagel.coremod.permission.BuildZones;
 import de.niconagel.coremod.permission.PermissionManager;
+import de.niconagel.coremod.tf.Abstellungen;
+import de.niconagel.coremod.tf.Garnituren;
+import de.niconagel.coremod.tf.Strecken;
 import de.niconagel.coremod.utils.filemanager.DirectoryHandler;
 import de.niconagel.coremod.utils.filemanager.FileManager;
 import lombok.Getter;
@@ -52,6 +55,9 @@ public class SetupManager {
 
         PermissionManager.load(Path.of("CoreMod/permissions.json"), Path.of("CoreMod/jobs.json"));
         BuildZones.load();
+        Strecken.load();
+        Garnituren.load();
+        Abstellungen.load();
     }
 
     public FileManager getRestFileManager() {

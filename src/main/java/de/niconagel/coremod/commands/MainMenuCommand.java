@@ -4,6 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import de.niconagel.coremod.api.Permissions;
 import de.niconagel.coremod.mainmenu.MainMenu;
+import de.niconagel.coremod.mainmenu.MainMenuNetwork;
 import de.niconagel.coremod.permission.PermissionManager;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -13,11 +14,15 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.io.IOException;
 
 /**
- * /mainmenu setview                   → View = eigene Augenposition und Blickrichtung
+ * /mainmenu routes                    → Routen-Editor: Strecken und Routen für Triebfahrzeugführer
+ * /mainmenu routes trains             → Zug-Editor: Garnituren aus MR-Fahrzeugen
+ * /mainmenu routes spawns             → Abstellungs-Editor: Gleise auf MR-Splines, auf denen Züge eingesetzt werden
+ * /mainmenu setview                  → View = eigene Augenposition und Blickrichtung
  * /mainmenu setview &lt;x y z&gt; &lt;yaw pitch&gt; → View = angegebene Werte (Dimension = eigene)
  */
 public final class MainMenuCommand {
@@ -29,6 +34,12 @@ public final class MainMenuCommand {
         dispatcher.register(
                 Commands.literal("mainmenu")
                         .requires(PermissionManager.require(Permissions.COMMAND_MAINMENU))
+                        .then(Commands.literal("routes")
+                                .executes(context -> openEditor(context.getSource(), MainMenuNetwork.OpenEditor.ROUTES))
+                                .then(Commands.literal("trains")
+                                        .executes(context -> openEditor(context.getSource(), MainMenuNetwork.OpenEditor.TRAINS)))
+                                .then(Commands.literal("spawns")
+                                        .executes(context -> openEditor(context.getSource(), MainMenuNetwork.OpenEditor.SPAWNS))))
                         .then(Commands.literal("setview")
                                 .executes(context -> {
                                     ServerPlayer player = context.getSource().getPlayerOrException();
@@ -42,6 +53,11 @@ public final class MainMenuCommand {
                                                     return setView(context.getSource(), Vec3Argument.getVec3(context, "pos"), rotation.y, rotation.x);
                                                 }))))
         );
+    }
+
+    private static int openEditor(CommandSourceStack source, int editor) throws CommandSyntaxException {
+        PacketDistributor.sendToPlayer(source.getPlayerOrException(), MainMenuNetwork.OpenEditor.of(editor));
+        return 1;
     }
 
     private static int setView(CommandSourceStack source, Vec3 pos, float yaw, float pitch) throws CommandSyntaxException {

@@ -5,6 +5,7 @@ import net.minecraft.client.gui.screens.ReceivingLevelScreen;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
@@ -23,19 +24,31 @@ public final class MainMenuClient {
     private static boolean previousHideGui;
     /** Vom Server: welche Jobs die Rolle wählen darf. */
     static List<CoremodClient.JobEntry> jobs = List.of();
+    /** Vom Server: Strecken und Routen für Triebfahrzeugführer. */
+    static List<CoremodClient.Strecke> strecken = List.of();
+    /** Vom Server: Garnituren und MR-Fahrzeuge für die Routendetails. */
+    static Zugdaten zugdaten = Zugdaten.NONE;
+    /** Vom Server: Abstellungen, für die Routendetails. */
+    static List<CoremodClient.Abstellung> abstellungen = List.of();
 
     private MainMenuClient() {
     }
 
-    /** Vom Server ausgelöst: beim Join und noch einmal, wenn die Rolle geladen ist (dann ändern sich ggf. die Jobs). */
-    public static void open(List<CoremodClient.JobEntry> availableJobs) {
+    /**
+     * Vom Server ausgelöst: beim Join, noch einmal, wenn die Rolle geladen ist (dann ändern sich ggf. die Jobs), und wenn
+     * ein Start fehlgeschlagen ist (dann ohne Intro, das gibt es nur einmal pro Verbindung).
+     */
+    public static void open(List<CoremodClient.JobEntry> availableJobs, List<CoremodClient.Strecke> availableStrecken, Zugdaten trains,
+                            List<CoremodClient.Abstellung> availableAbstellungen) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!inMenu) {
             previousHideGui = minecraft.options.hideGui;
-            introShown = false;
         }
         inMenu = true;
         jobs = availableJobs;
+        strecken = availableStrecken;
+        zugdaten = trains;
+        abstellungen = availableAbstellungen;
 
         if (minecraft.screen instanceof MainMenuScreen screen) {
             // Knöpfe neu aufbauen, ohne das Intro neu zu starten
@@ -43,9 +56,10 @@ public final class MainMenuClient {
         }
     }
 
-    static void play(CoremodClient.JobEntry job) {
+    /** @param route Routennummer beim Triebfahrzeugführer, sonst "" */
+    static void play(CoremodClient.JobEntry job, String route) {
         leave();
-        PacketDistributor.sendToServer(new CoremodClient.Play(job.id()));
+        PacketDistributor.sendToServer(new CoremodClient.Play(job.id(), route));
         Minecraft.getInstance().setScreen(null);
     }
 
@@ -62,6 +76,11 @@ public final class MainMenuClient {
     private static void leave() {
         inMenu = false;
         Minecraft.getInstance().options.hideGui = previousHideGui;
+    }
+
+    @SubscribeEvent
+    public static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
+        introShown = false;
     }
 
     @SubscribeEvent
