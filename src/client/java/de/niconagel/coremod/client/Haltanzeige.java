@@ -15,18 +15,15 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Vector3f;
 
-import java.util.List;
-
 /**
- * Halte der laufenden Fahrt beim Fahrer: an jedem Halt ein leuchtender Strahl wie beim Leuchtfeuer, darüber Name und
- * Entfernung. Der nächste Halt leuchtet gelb, die weiteren weiß; wo der Zug schon gestanden hat, ist der Strahl weg.
+ * Nächster Halt der laufenden Fahrt beim Fahrer: ein leuchtender Strahl wie beim Leuchtfeuer, darüber Name und Entfernung.
+ * Immer nur der nächste; hat der Zug dort gestanden, wandert die Anzeige zum folgenden Halt.
  */
 @EventBusSubscriber(modid = CoremodClient.MOD_ID, value = Dist.CLIENT)
 public final class Haltanzeige {
 
     private static final int BEAM_HEIGHT = 64;
-    private static final int NEXT = 0xFFFFFF55;
-    private static final int LATER = 0xFFFFFFFF;
+    private static final int COLOR = 0xFFFFFF55;
 
     private static CoremodClient.FahrtState state = CoremodClient.FahrtState.NONE;
 
@@ -42,41 +39,48 @@ public final class Haltanzeige {
         state = CoremodClient.FahrtState.NONE;
     }
 
+    /** Der nächste Halt, oder null: keine Fahrt oder alle Halte erledigt. */
+    private static CoremodClient.Marker next() {
+        int next = state.done().indexOf(false);
+        return next < 0 ? null : state.stops().get(next);
+    }
+
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
-        if (state.stops().isEmpty() || event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
+        CoremodClient.Marker next = next();
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null) return;
+        if (next == null || minecraft.level == null || event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
 
-        Camera camera = event.getCamera();
-        Vec3 eye = camera.getPosition();
-        float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
-        long gameTime = minecraft.level.getGameTime();
+        Vec3 eye = event.getCamera().getPosition();
+        Vector3f p = next.position();
         PoseStack poseStack = event.getPoseStack();
         MultiBufferSource.BufferSource buffers = minecraft.renderBuffers().bufferSource();
 
         poseStack.pushPose();
-        poseStack.translate(-eye.x, -eye.y, -eye.z);
-        int next = state.done().indexOf(false);
-        for (int i = 0; i < state.stops().size(); i++) {
-            if (state.done().get(i)) continue;
-            Vector3f p = state.stops().get(i).position();
-
-            // Der Strahl steht mittig im Block, deshalb um einen halben Block zurück
-            poseStack.pushPose();
-            poseStack.translate(p.x() - 0.5f, p.y(), p.z() - 0.5f);
-            BeaconRenderer.renderBeaconBeam(poseStack, buffers, BeaconRenderer.BEAM_LOCATION, partialTick, 1.0f, gameTime,
-                    0, BEAM_HEIGHT, i == next ? NEXT : LATER, 0.2f, 0.25f);
-            poseStack.popPose();
-
-            // Mit der Entfernung größer, damit der Name auch von weitem lesbar bleibt
-            double distance = eye.distanceTo(new Vec3(p));
-            Component text = Component.literal(state.stops().get(i).label())
-                    .withStyle(i == next ? ChatFormatting.YELLOW : ChatFormatting.WHITE)
-                    .append(Component.literal(" · " + Zugdaten.number(distance) + " m").withStyle(ChatFormatting.GRAY));
-            Weltauswahl.label(poseStack, buffers, camera, p, text, 4.0f, (float) Math.max(1, distance / 12));
-        }
+        // Der Strahl steht mittig im Block, deshalb um einen halben Block zurück
+        poseStack.translate(p.x() - eye.x - 0.5, p.y() - eye.y, p.z() - eye.z - 0.5);
+        BeaconRenderer.renderBeaconBeam(poseStack, buffers, BeaconRenderer.BEAM_LOCATION,
+                event.getPartialTick().getGameTimeDeltaPartialTick(false), 1.0f, minecraft.level.getGameTime(),
+                0, BEAM_HEIGHT, COLOR, 0.2f, 0.25f);
         poseStack.popPose();
+        buffers.endBatch();
+    }
+
+    /** Name und Entfernung erst ganz am Ende, siehe {@link Weltauswahl#labelPose}. */
+    @SubscribeEvent
+    public static void onRenderLabels(RenderLevelStageEvent event) {
+        CoremodClient.Marker next = next();
+        if (next == null || event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) return;
+
+        Camera camera = event.getCamera();
+        Vector3f p = next.position();
+        // Mit der Entfernung größer, damit der Name auch von weitem lesbar bleibt
+        double distance = camera.getPosition().distanceTo(new Vec3(p));
+        Component text = Component.literal(next.label()).withStyle(ChatFormatting.YELLOW)
+                .append(Component.literal(" · " + Zugdaten.number(distance) + " m").withStyle(ChatFormatting.GRAY));
+
+        MultiBufferSource.BufferSource buffers = Minecraft.getInstance().renderBuffers().bufferSource();
+        Weltauswahl.label(Weltauswahl.labelPose(event), buffers, camera, p, text, 4.0f, (float) Math.max(1, distance / 12));
         buffers.endBatch();
     }
 }

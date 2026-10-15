@@ -134,12 +134,32 @@ public final class Weltauswahl {
         }
         if (hover != null) marker(lines, pose, hover, occupied(hover) ? 0xFF5555 : 0xFFFF55);
         buffers.endBatch(RenderType.lines());
+        poseStack.popPose();
+    }
 
+    @SubscribeEvent
+    public static void onRenderLabels(RenderLevelStageEvent event) {
+        if (!active() || event.getStage() != RenderLevelStageEvent.Stage.AFTER_LEVEL) return;
+        MultiBufferSource.BufferSource buffers = Minecraft.getInstance().renderBuffers().bufferSource();
+        PoseStack poseStack = labelPose(event);
         for (CoremodClient.Marker marker : state.markers()) {
-            label(poseStack, buffers, camera, marker.position(), Component.literal(marker.label()), 3.0f, 1);
+            label(poseStack, buffers, event.getCamera(), marker.position(), Component.literal(marker.label()), 3.0f, 1);
         }
         buffers.endBatch();
-        poseStack.popPose();
+    }
+
+    /**
+     * PoseStack in Weltkoordinaten für Labels in {@link RenderLevelStageEvent.Stage#AFTER_LEVEL}. Labels erst dort zeichnen:
+     * sie sind durch alles hindurch sichtbar und schreiben keine Tiefe, also malt sonst alles drüber, was Minecraft danach
+     * noch zeichnet (Wolken, Regen, bei "Fabelhaft" Glas und Wasser), und sie verschwinden je nach Blickwinkel.
+     */
+    static PoseStack labelPose(RenderLevelStageEvent event) {
+        // In dieser Phase ist die Blickrichtung nicht mehr eingerechnet, die Matrix kommt mit dem Event
+        PoseStack poseStack = new PoseStack();
+        poseStack.mulPose(event.getModelViewMatrix());
+        Vec3 eye = event.getCamera().getPosition();
+        poseStack.translate(-eye.x, -eye.y, -eye.z);
+        return poseStack;
     }
 
     @SubscribeEvent
