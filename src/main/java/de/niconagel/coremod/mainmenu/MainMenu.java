@@ -36,6 +36,7 @@ import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.joml.Vector3f;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -45,6 +46,7 @@ import java.nio.file.Path;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -75,9 +77,47 @@ public final class MainMenu {
     private static final Set<UUID> IN_MENU = ConcurrentHashMap.newKeySet();
     /** Nur für diese Sitzung: nach jedem Join wird im Menü neu gewählt. */
     private static final Map<UUID, Job> JOBS = new ConcurrentHashMap<>();
-    /** Gewählte Route der Triebfahrzeugführer, ebenfalls nur für diese Sitzung. */
-    private static final Map<UUID, Strecken.Route> ROUTES = new ConcurrentHashMap<>();
+    /** Laufende Fahrten der Triebfahrzeugführer, ebenfalls nur für diese Sitzung. */
+    private static final Map<UUID, Fahrt> FAHRTEN = new ConcurrentHashMap<>();
     private static volatile View view;
+
+    /** Nach Ankunft am letzten Halt bis zum Abblenden. */
+    private static final int RETURN_DELAY = 15 * 20;
+    /** So lange blendet der Client ab (FadeToMenu), dann ist der Bildschirm schwarz und der Wechsel unsichtbar. */
+    private static final int FADE = 30;
+
+    /** Gestartete Route: wo der Zug ist und wie weit das Ende schon ist. */
+    private static final class Fahrt {
+        final Strecken.Route route;
+        final UUID train;
+        final String dimension;
+        /** Halte, an denen der Zug schon gestanden hat; der Client zeigt nur die übrigen an. */
+        final boolean[] done;
+        /** Tick der Ankunft am letzten Halt, -1 = noch unterwegs. */
+        int arrivedAt = -1;
+        /** Tick, ab dem abgeblendet wird, -1 = noch nicht. */
+        int fadeAt = -1;
+
+        Fahrt(Strecken.Route route, UUID train, String dimension) {
+            this.route = route;
+            this.train = train;
+            this.dimension = dimension;
+            this.done = new boolean[route.stops().size()];
+        }
+
+        /** Die Halte für die Anzeige beim Fahrer. */
+        MainMenuNetwork.FahrtState state() {
+            List<MainMenuNetwork.Marker> stops = new ArrayList<>();
+            List<Boolean> flags = new ArrayList<>();
+            for (int i = 0; i < route.stops().size(); i++) {
+                Abstellungen.Gleispunkt punkt = route.stops().get(i).punkt();
+                stops.add(new MainMenuNetwork.Marker(new Vector3f((float) punkt.x(), (float) punkt.y(), (float) punkt.z()),
+                        route.stops().get(i).name()));
+                flags.add(done[i]);
+            }
+            return new MainMenuNetwork.FahrtState(stops, flags);
+        }
+    }
 
     private MainMenu() {
     }
@@ -94,7 +134,8 @@ public final class MainMenu {
 
     /** @return die gestartete Route eines Triebfahrzeugführers, sonst null */
     public static Strecken.Route getRoute(UUID player) {
-        return ROUTES.get(player);
+        Fahrt fahrt = FAHRTEN.get(player);
+        return fahrt == null ? null : fahrt.route;
     }
 
     /** @return der im Menü gewählte Job, null solange der Spieler im Menü oder offline ist */
@@ -128,8 +169,11 @@ public final class MainMenu {
 
     @SubscribeEvent
     public static void onJoin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (event.getEntity() instanceof ServerPlayer player) enterMenu(player);
+    }
 
+    /** Beim Join und am Ende einer Fahrt: an die View, unsichtbar und schwebend, und das Menü auf. */
+    private static void enterMenu(ServerPlayer player) {
         // Nur merken, wenn noch nichts gemerkt ist: Wer beim letzten Mal im Menü gegangen ist, steht jetzt an der View
         CompoundTag data = player.getPersistentData();
         if (!data.contains(RETURN_KEY)) {
@@ -195,7 +239,7 @@ public final class MainMenu {
 
         IN_MENU.remove(uuid);
         JOBS.put(uuid, job);
-        if (route != null) ROUTES.put(uuid, route);
+        if (train != null) FAHRTEN.put(uuid, new Fahrt(route, train.train(), train.gleis().dimension()));
 
         // ponytail: FDL kommt vorerst auch an die gemerkte Stelle, eigener Einstieg folgt
         CompoundTag back = player.getPersistentData().getCompound(RETURN_KEY);
@@ -228,7 +272,11 @@ public final class MainMenu {
         // OP-Level für den Client (F3+F4) und Befehlsliste passend zum Job
         player.server.getPlayerList().sendPlayerPermissionLevel(player);
 
-        if (train != null) sendEbula(player, zugnummer, departure, train);
+        if (train != null) {
+            sendEbula(player, zugnummer, departure, train);
+            // Halte beim Fahrer leuchten lassen
+            PacketDistributor.sendToPlayer(player, FAHRTEN.get(uuid).state());
+        }
     }
 
     /**
@@ -271,7 +319,52 @@ public final class MainMenu {
      */
     @SubscribeEvent
     public static void onTick(PlayerTickEvent.Post event) {
-        if (event.getEntity() instanceof ServerPlayer player && isInMenu(player)) hover(player);
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (isInMenu(player)) hover(player);
+
+        Fahrt fahrt = FAHRTEN.get(player.getUUID());
+        if (fahrt != null) tickFahrt(player, fahrt);
+    }
+
+    /**
+     * Ende einer Fahrt: Steht der Zug am letzten Halt, gibt es eine Meldung, 15 Sekunden später blendet der Client
+     * ab, und sobald es schwarz ist, verschwindet der Zug und der Spieler ist zurück im Menü.
+     */
+    private static void tickFahrt(ServerPlayer player, Fahrt fahrt) {
+        int now = player.server.getTickCount();
+        ServerLevel level = level(player.server, fahrt.dimension);
+
+        if (fahrt.arrivedAt < 0) {
+            if (now % 10 != 0) return;
+            List<Strecken.Haltepunkt> stops = fahrt.route.stops();
+            boolean changed = false;
+            for (int i = 0; i < stops.size(); i++) {
+                if (fahrt.done[i] || !Zugeinsatz.standsAt(level, fahrt.train, stops.get(i).punkt())) continue;
+                fahrt.done[i] = true;
+                changed = true;
+            }
+            if (!changed) return;
+            PacketDistributor.sendToPlayer(player, fahrt.state());
+
+            // Am letzten Halt ist Schluss, auch wenn unterwegs einer ausgelassen wurde
+            if (!fahrt.done[stops.size() - 1]) return;
+            fahrt.arrivedAt = now;
+            player.sendSystemMessage(Component.literal("Haltepunkt \"" + stops.getLast().name() + "\" erreicht. Rückkehr zum Menü in "
+                    + RETURN_DELAY / 20 + " Sekunden.").withStyle(ChatFormatting.GREEN));
+        } else if (fahrt.fadeAt < 0) {
+            if (now - fahrt.arrivedAt < RETURN_DELAY) return;
+            fahrt.fadeAt = now;
+            PacketDistributor.sendToPlayer(player, MainMenuNetwork.FadeToMenu.INSTANCE);
+        } else if (now - fahrt.fadeAt >= FADE) {
+            FAHRTEN.remove(player.getUUID());
+            JOBS.remove(player.getUUID());
+            player.stopRiding();
+            Zugeinsatz.remove(level, fahrt.train);
+            PacketDistributor.sendToPlayer(player, MainMenuNetwork.FahrtState.NONE);
+            enterMenu(player);
+            // Ohne Job gelten wieder nur die Rechte der Rolle
+            player.server.getPlayerList().sendPlayerPermissionLevel(player);
+        }
     }
 
     private static void hover(ServerPlayer player) {
@@ -290,7 +383,11 @@ public final class MainMenu {
         // Die gemerkte Position bleibt in den Spielerdaten, beim nächsten Join geht es dorthin zurück
         IN_MENU.remove(event.getEntity().getUUID());
         JOBS.remove(event.getEntity().getUUID());
-        ROUTES.remove(event.getEntity().getUUID());
+        // Wer während der Fahrt geht, nimmt seinen Zug mit vom Gleis
+        Fahrt fahrt = FAHRTEN.remove(event.getEntity().getUUID());
+        if (fahrt != null && event.getEntity() instanceof ServerPlayer player) {
+            Zugeinsatz.remove(level(player.server, fahrt.dimension), fahrt.train);
+        }
     }
 
     @SubscribeEvent

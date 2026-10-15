@@ -21,6 +21,7 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Setzt eine Garnitur als MR-Zug auf ein Gleis einer Abstellung: frei, lang genug und mit Weg zum ersten Halt, die Lok
@@ -39,13 +40,51 @@ public final class Zugeinsatz {
     private Zugeinsatz() {
     }
 
+    /** Darunter (m/s) steht ein Zug. */
+    private static final double STOPPED = 0.05;
+    /** So weit muss ein Zug gefahren sein, bevor er an einem Halt ankommen kann, sonst zählte schon das Einsetzen. */
+    private static final double MIN_DRIVEN = 10;
+    /** Spielraum um ein Fahrzeug, in dem ein Halt als erreicht gilt. */
+    private static final double AT_STOP = 5;
+
     /**
      * Wo der Zug steht.
      *
+     * @param train     MR-ID des Zugs
      * @param front     Position der Lok (Mitte)
      * @param direction Fahrtrichtung, waagrecht
      */
-    public record Eingesetzt(Gleis gleis, Vec3 front, Vec3 direction) {
+    public record Eingesetzt(UUID train, Gleis gleis, Vec3 front, Vec3 direction) {
+    }
+
+    /**
+     * Steht der Zug, nachdem er gefahren ist, mit einem seiner Fahrzeuge am Halt?
+     * ponytail: "am Halt" = ein Fahrzeug steht höchstens seine halbe Länge plus {@link #AT_STOP} davon entfernt, egal welches
+     */
+    public static boolean standsAt(ServerLevel level, UUID trainId, Gleispunkt stop) {
+        Train train = ForgeTrains.get(level).simulation().train(trainId);
+        if (train == null || Math.abs(train.speed()) > STOPPED) return false;
+
+        TrackView view = ForgeTrains.trackView(level.dimension().location().toString());
+        RollingStockModule module = ForgePlatformBootstrap.bootstrap().rollingStockModule();
+        Vector3 point = new Vector3(stop.x(), stop.y(), stop.z());
+        boolean driven = false;
+        boolean atStop = false;
+        for (RailVehicle vehicle : train.vehicles()) {
+            driven |= Math.abs(vehicle.odometer()) > MIN_DRIVEN;
+            if (vehicle.trackPosition() == null || !view.contains(vehicle.trackPosition())) continue;
+            VehicleShape shape = module.shape(vehicle.definition());
+            double half = (shape.frontReach(vehicle.definition()) + shape.rearReach(vehicle.definition())) / 2;
+            atStop |= view.sample(vehicle.trackPosition()).position().distanceTo(point) < half + AT_STOP;
+        }
+        return driven && atStop;
+    }
+
+    /** Nimmt den ganzen Zug vom Gleis. */
+    public static void remove(ServerLevel level, UUID trainId) {
+        ForgeTrains trains = ForgeTrains.get(level);
+        trains.simulation().removeTrain(trainId);
+        trains.setDirty();
     }
 
     /**
@@ -105,7 +144,7 @@ public final class Zugeinsatz {
             TrackGeometrySample sample = view.sample(train.vehicles().getFirst().trackPosition());
             Vector3 p = sample.position();
             Vector3 t = sample.tangent();
-            return new Eingesetzt(gleis, new Vec3(p.x(), p.y(), p.z()), new Vec3(t.x(), 0, t.z()).normalize());
+            return new Eingesetzt(train.id(), gleis, new Vec3(p.x(), p.y(), p.z()), new Vec3(t.x(), 0, t.z()).normalize());
         }
         throw new IllegalStateException(reason);
     }

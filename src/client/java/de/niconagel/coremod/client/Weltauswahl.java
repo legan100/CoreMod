@@ -135,7 +135,9 @@ public final class Weltauswahl {
         if (hover != null) marker(lines, pose, hover, occupied(hover) ? 0xFF5555 : 0xFFFF55);
         buffers.endBatch(RenderType.lines());
 
-        for (CoremodClient.Marker marker : state.markers()) label(poseStack, buffers, camera, marker);
+        for (CoremodClient.Marker marker : state.markers()) {
+            label(poseStack, buffers, camera, marker.position(), Component.literal(marker.label()), 3.0f, 1);
+        }
         buffers.endBatch();
         poseStack.popPose();
     }
@@ -242,15 +244,16 @@ public final class Weltauswahl {
         segment(lines, pose, new Vector3f(p).add(0, 0, -0.5f), new Vector3f(p).add(0, 0, 0.5f), rgb, 255);
     }
 
-    /** Name über dem Punkt, zur Kamera gedreht und durch Blöcke sichtbar, wie ein Namensschild. */
-    private static void label(PoseStack poseStack, MultiBufferSource buffers, Camera camera, CoremodClient.Marker marker) {
+    /**
+     * Text {@code height} Blöcke über dem Punkt, zur Kamera gedreht und durch Blöcke sichtbar, wie ein Namensschild.
+     * {@code scale} 1 = Größe eines Namensschilds. Die PoseStack muss in Weltkoordinaten stehen.
+     */
+    static void label(PoseStack poseStack, MultiBufferSource buffers, Camera camera, Vector3f p, Component text, float height, float scale) {
         Font font = Minecraft.getInstance().font;
-        Vector3f p = marker.position();
         poseStack.pushPose();
-        poseStack.translate(p.x(), p.y() + 3.0f, p.z());
+        poseStack.translate(p.x(), p.y() + height, p.z());
         poseStack.mulPose(camera.rotation());
-        poseStack.scale(0.025f, -0.025f, 0.025f);
-        Component text = Component.literal(marker.label());
+        poseStack.scale(0.025f * scale, -0.025f * scale, 0.025f * scale);
         font.drawInBatch(text, -font.width(text) / 2f, 0, 0xFFFFFFFF, false, poseStack.last().pose(), buffers,
                 Font.DisplayMode.SEE_THROUGH, 0x40000000, LightTexture.FULL_BRIGHT);
         poseStack.popPose();

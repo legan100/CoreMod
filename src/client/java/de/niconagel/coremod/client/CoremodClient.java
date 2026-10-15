@@ -154,6 +154,33 @@ public final class CoremodClient {
         }
     }
 
+    /** Server → Client: Fahrt zu Ende, abblenden; zurück ins Menü holt der Server, siehe {@link Abblende}. */
+    public record FadeToMenu() implements CustomPacketPayload {
+        public static final FadeToMenu INSTANCE = new FadeToMenu();
+        public static final Type<FadeToMenu> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "fade_to_menu"));
+        public static final StreamCodec<ByteBuf, FadeToMenu> CODEC = StreamCodec.unit(INSTANCE);
+
+        @Override
+        public Type<FadeToMenu> type() {
+            return TYPE;
+        }
+    }
+
+    /** Server → Client: Halte der laufenden Fahrt, siehe {@link Haltanzeige}. Keine Halte = keine Fahrt (mehr). */
+    public record FahrtState(List<Marker> stops, List<Boolean> done) implements CustomPacketPayload {
+        static final FahrtState NONE = new FahrtState(List.of(), List.of());
+        public static final Type<FahrtState> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "fahrt_state"));
+        public static final StreamCodec<ByteBuf, FahrtState> CODEC = StreamCodec.composite(
+                Marker.CODEC.apply(ByteBufCodecs.list()), FahrtState::stops,
+                ByteBufCodecs.BOOL.apply(ByteBufCodecs.list()), FahrtState::done,
+                FahrtState::new);
+
+        @Override
+        public Type<FahrtState> type() {
+            return TYPE;
+        }
+    }
+
     // ---------------------------------------------------------------- Editoren
 
     /**
@@ -336,7 +363,10 @@ public final class CoremodClient {
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         // optional: Server ohne CoreMod lassen sich trotzdem betreten
-        PayloadRegistrar registrar = event.registrar("8").optional();
+        PayloadRegistrar registrar = event.registrar("10").optional();
+
+        registrar.playToClient(FadeToMenu.TYPE, FadeToMenu.CODEC, (payload, context) -> Abblende.start());
+        registrar.playToClient(FahrtState.TYPE, FahrtState.CODEC, (payload, context) -> Haltanzeige.update(payload));
 
         // Hauptmenü
         registrar.playToClient(OpenMenu.TYPE, OpenMenu.CODEC,

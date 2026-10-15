@@ -173,6 +173,36 @@ public final class MainMenuNetwork {
         }
     }
 
+    /** Server → Client: Fahrt zu Ende, abblenden; der Server holt den Spieler zurück ins Menü, wenn es schwarz ist. */
+    public record FadeToMenu() implements CustomPacketPayload {
+        public static final FadeToMenu INSTANCE = new FadeToMenu();
+        public static final Type<FadeToMenu> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "fade_to_menu"));
+        public static final StreamCodec<ByteBuf, FadeToMenu> CODEC = StreamCodec.unit(INSTANCE);
+
+        @Override
+        public Type<FadeToMenu> type() {
+            return TYPE;
+        }
+    }
+
+    /**
+     * Server → Client: Halte der laufenden Fahrt, die beim Fahrer leuchten; {@code done} = dort hat der Zug schon
+     * gestanden. Keine Halte = keine Fahrt (mehr).
+     */
+    public record FahrtState(List<Marker> stops, List<Boolean> done) implements CustomPacketPayload {
+        public static final FahrtState NONE = new FahrtState(List.of(), List.of());
+        public static final Type<FahrtState> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "fahrt_state"));
+        public static final StreamCodec<ByteBuf, FahrtState> CODEC = StreamCodec.composite(
+                Marker.CODEC.apply(ByteBufCodecs.list()), FahrtState::stops,
+                ByteBufCodecs.BOOL.apply(ByteBufCodecs.list()), FahrtState::done,
+                FahrtState::new);
+
+        @Override
+        public Type<FahrtState> type() {
+            return TYPE;
+        }
+    }
+
     // ---------------------------------------------------------------- Editoren
 
     /**
@@ -385,7 +415,14 @@ public final class MainMenuNetwork {
 
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("8");
+        PayloadRegistrar registrar = event.registrar("10");
+
+        registrar.playToClient(FadeToMenu.TYPE, FadeToMenu.CODEC, (payload, context) -> {
+            // kommt nur beim Client an
+        });
+        registrar.playToClient(FahrtState.TYPE, FahrtState.CODEC, (payload, context) -> {
+            // kommt nur beim Client an
+        });
 
         // Hauptmenü
         registrar.playToClient(OpenMenu.TYPE, OpenMenu.CODEC, (payload, context) -> {
