@@ -10,32 +10,61 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderGuiEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 
+import java.util.function.BooleanSupplier;
+
 /**
- * Schwarzblende am Ende einer Fahrt: abblenden, schwarz bleiben, bis der Server den Spieler ins Menü geholt hat und das
- * Hauptmenü offen ist, dann aufblenden. In Echtzeit, damit es unabhängig von Ticks und FPS gleichmäßig wirkt.
+ * Schwarzblende für Wechsel zwischen Menü und Welt: abblenden, schwarz bleiben, bis das Ziel bereit ist, dann aufblenden.
+ * In Echtzeit, damit es unabhängig von Ticks und FPS gleichmäßig wirkt.
+ * <ul>
+ *     <li>Job gewählt ({@link #toWorld}): erst bei Schwarz geht die Wahl an den Server.</li>
+ *     <li>Fahrt zu Ende ({@link #toMenu}): bei Schwarz holt der Server den Spieler ins Menü.</li>
+ * </ul>
  */
 @EventBusSubscriber(modid = CoremodClient.MOD_ID, value = Dist.CLIENT)
 public final class Abblende {
 
-    /** Wie FADE in MainMenu auf dem Server: so lange, bis der Wechsel passiert. */
-    private static final long FADE_IN = 1500;
+    /** Wie FADE in MainMenu auf dem Server: so lange, bis der Server den Spieler ins Menü holt. */
+    private static final long TO_MENU = 1500;
+    private static final long TO_WORLD = 800;
     private static final long FADE_OUT = 1500;
-    /** Schwarz, nachdem das Menü offen ist: die Welt an der View braucht einen Moment zum Laden. */
+    /** Noch schwarz, nachdem das Ziel bereit ist: die Welt braucht einen Moment, bis sie gezeichnet ist. */
     private static final long SETTLE = 400;
-    /** Kommt das Menü nicht (z.B. Server hängt), wird trotzdem wieder aufgeblendet. */
+    /** Wird das Ziel nicht bereit (z.B. Server hängt), wird trotzdem wieder aufgeblendet. */
     private static final long MAX_BLACK = 10_000;
 
     /** Beginn des Abblendens, -1 = keine Blende. */
     private static long start = -1;
+    private static long fadeIn;
     /** Beginn des Aufblendens, -1 = noch nicht bekannt. */
     private static long fadeOutAt = -1;
+    /** Läuft einmal, sobald es schwarz ist; null = schon gelaufen oder nichts zu tun. */
+    private static Runnable whenBlack;
+    private static BooleanSupplier ready = () -> true;
 
     private Abblende() {
     }
 
-    static void start() {
+    /** Fahrt zu Ende: aufgeblendet wird, wenn das Hauptmenü offen ist. */
+    static void toMenu() {
+        start(TO_MENU, null, () -> Minecraft.getInstance().screen instanceof MainMenuScreen);
+    }
+
+    /** Job gewählt: {@code whenBlack} schickt die Wahl, {@code ready} sagt, wann die Welt zu sehen sein darf. */
+    static void toWorld(Runnable whenBlack, BooleanSupplier ready) {
+        start(TO_WORLD, whenBlack, ready);
+    }
+
+    private static void start(long duration, Runnable action, BooleanSupplier until) {
         start = Util.getMillis();
+        fadeIn = duration;
         fadeOutAt = -1;
+        whenBlack = action;
+        ready = until;
+    }
+
+    /** Läuft gerade eine Blende? Dann nimmt das Menü keine weitere Wahl an. */
+    static boolean active() {
+        return start >= 0;
     }
 
     /** 0 = durchsichtig, 1 = schwarz. */
@@ -44,9 +73,14 @@ public final class Abblende {
         long now = Util.getMillis();
 
         if (fadeOutAt < 0) {
-            boolean menuOpen = Minecraft.getInstance().screen instanceof MainMenuScreen && now - start >= FADE_IN;
-            if (menuOpen || now - start > MAX_BLACK) fadeOutAt = now + SETTLE;
-            return Math.min(1, (now - start) / (float) FADE_IN);
+            float alpha = Math.min(1, (now - start) / (float) fadeIn);
+            if (alpha >= 1 && whenBlack != null) {
+                // Nicht mitten im Zeichnen Screens wechseln oder Pakete schicken
+                Minecraft.getInstance().tell(whenBlack);
+                whenBlack = null;
+            }
+            if (alpha >= 1 && whenBlack == null && ready.getAsBoolean() || now - start > MAX_BLACK) fadeOutAt = now + SETTLE;
+            return alpha;
         }
         if (now < fadeOutAt) return 1;
 
@@ -58,6 +92,7 @@ public final class Abblende {
     @SubscribeEvent
     public static void onLogout(ClientPlayerNetworkEvent.LoggingOut event) {
         start = -1;
+        whenBlack = null;
     }
 
     /** Ohne Screen über der HUD … */

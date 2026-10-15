@@ -173,6 +173,21 @@ public final class MainMenuNetwork {
         }
     }
 
+    /**
+     * Server → Client: Job-Wahl angenommen, der Spieler ist am Ziel (Teleport und ggf. Zug sind durch). Der Client blendet
+     * dann auf. Schlägt der Start fehl, kommt stattdessen OpenMenu.
+     */
+    public record Started() implements CustomPacketPayload {
+        public static final Started INSTANCE = new Started();
+        public static final Type<Started> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "started"));
+        public static final StreamCodec<ByteBuf, Started> CODEC = StreamCodec.unit(INSTANCE);
+
+        @Override
+        public Type<Started> type() {
+            return TYPE;
+        }
+    }
+
     /** Server → Client: Fahrt zu Ende, abblenden; der Server holt den Spieler zurück ins Menü, wenn es schwarz ist. */
     public record FadeToMenu() implements CustomPacketPayload {
         public static final FadeToMenu INSTANCE = new FadeToMenu();
@@ -415,8 +430,11 @@ public final class MainMenuNetwork {
 
     @SubscribeEvent
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar("10");
+        PayloadRegistrar registrar = event.registrar("11");
 
+        registrar.playToClient(Started.TYPE, Started.CODEC, (payload, context) -> {
+            // kommt nur beim Client an
+        });
         registrar.playToClient(FadeToMenu.TYPE, FadeToMenu.CODEC, (payload, context) -> {
             // kommt nur beim Client an
         });
@@ -431,6 +449,7 @@ public final class MainMenuNetwork {
         registrar.playToServer(Play.TYPE, Play.CODEC, (payload, context) -> {
             Job job = Job.byName(payload.job());
             if (job != null) MainMenu.play((ServerPlayer) context.player(), job, payload.route());
+            else MainMenu.sendMenu((ServerPlayer) context.player());
         });
 
         // Editoren

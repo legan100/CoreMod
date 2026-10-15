@@ -42,8 +42,6 @@ public final class Zugeinsatz {
 
     /** Darunter (m/s) steht ein Zug. */
     private static final double STOPPED = 0.05;
-    /** So weit muss ein Zug gefahren sein, bevor er an einem Halt ankommen kann, sonst zählte schon das Einsetzen. */
-    private static final double MIN_DRIVEN = 10;
     /** Spielraum um ein Fahrzeug, in dem ein Halt als erreicht gilt. */
     private static final double AT_STOP = 5;
 
@@ -57,27 +55,45 @@ public final class Zugeinsatz {
     public record Eingesetzt(UUID train, Gleis gleis, Vec3 front, Vec3 direction) {
     }
 
+    /** Wo ein Zug im Verhältnis zu einem Halt ist. */
+    public enum Lage {
+        /** Den Zug gibt es nicht mehr. */
+        GONE,
+        AWAY,
+        /** Am Halt, fährt aber noch. */
+        NEAR,
+        /** Steht am Halt (auch direkt nach dem Einsetzen: die Halte kommen der Reihe nach, also zählt das nur für den ersten). */
+        STOPPED
+    }
+
     /**
-     * Steht der Zug, nachdem er gefahren ist, mit einem seiner Fahrzeuge am Halt?
+     * Wo ist der Zug im Verhältnis zum Halt?
      * ponytail: "am Halt" = ein Fahrzeug steht höchstens seine halbe Länge plus {@link #AT_STOP} davon entfernt, egal welches
      */
-    public static boolean standsAt(ServerLevel level, UUID trainId, Gleispunkt stop) {
+    public static Lage lage(ServerLevel level, UUID trainId, Gleispunkt stop) {
         Train train = ForgeTrains.get(level).simulation().train(trainId);
-        if (train == null || Math.abs(train.speed()) > STOPPED) return false;
+        if (train == null) return Lage.GONE;
 
         TrackView view = ForgeTrains.trackView(level.dimension().location().toString());
         RollingStockModule module = ForgePlatformBootstrap.bootstrap().rollingStockModule();
         Vector3 point = new Vector3(stop.x(), stop.y(), stop.z());
-        boolean driven = false;
         boolean atStop = false;
         for (RailVehicle vehicle : train.vehicles()) {
-            driven |= Math.abs(vehicle.odometer()) > MIN_DRIVEN;
             if (vehicle.trackPosition() == null || !view.contains(vehicle.trackPosition())) continue;
             VehicleShape shape = module.shape(vehicle.definition());
             double half = (shape.frontReach(vehicle.definition()) + shape.rearReach(vehicle.definition())) / 2;
             atStop |= view.sample(vehicle.trackPosition()).position().distanceTo(point) < half + AT_STOP;
         }
-        return driven && atStop;
+        if (!atStop) return Lage.AWAY;
+        return Math.abs(train.speed()) <= STOPPED ? Lage.STOPPED : Lage.NEAR;
+    }
+
+    /** Fahrschalter auf 0, Bremse auf 100 %. Jeden Tick vor MRs Physik aufgerufen, sind die Eingaben des Fahrers wirkungslos. */
+    public static void hold(ServerLevel level, UUID trainId) {
+        Train train = ForgeTrains.get(level).simulation().train(trainId);
+        if (train == null) return;
+        train.setThrottle(0);
+        train.setBrake(1);
     }
 
     /** Nimmt den ganzen Zug vom Gleis. */

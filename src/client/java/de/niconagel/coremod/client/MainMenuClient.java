@@ -22,6 +22,10 @@ public final class MainMenuClient {
     private static boolean introShown;
     /** F1-Zustand vor dem Menü; im Menü sind HUD, Hand und Block-Umrandung ausgeblendet. */
     private static boolean previousHideGui;
+    /** Die Job-Wahl ist beim Server, das Menü zu. */
+    private static boolean playSent;
+    /** Der Server hat den Start bestätigt. */
+    private static boolean started;
     /** Vom Server: welche Jobs die Rolle wählen darf. */
     static List<CoremodClient.JobEntry> jobs = List.of();
     /** Vom Server: Strecken und Routen für Triebfahrzeugführer. */
@@ -56,11 +60,34 @@ public final class MainMenuClient {
         }
     }
 
-    /** @param route Routennummer beim Triebfahrzeugführer, sonst "" */
+    /**
+     * Job gewählt: abblenden, erst bei Schwarz die Wahl schicken und das Menü schließen. Aufgeblendet wird, wenn der
+     * Server den Start bestätigt und die Welt am Ziel gebaut ist, oder wenn er das Menü zurückschickt (Start fehlgeschlagen).
+     *
+     * @param route Routennummer beim Triebfahrzeugführer, sonst ""
+     */
     static void play(CoremodClient.JobEntry job, String route) {
-        leave();
-        PacketDistributor.sendToServer(new CoremodClient.Play(job.id(), route));
-        Minecraft.getInstance().setScreen(null);
+        // Doppelklick oder zweiter Job während des Abblendens
+        if (Abblende.active()) return;
+        playSent = false;
+        started = false;
+        Abblende.toWorld(() -> {
+            leave();
+            PacketDistributor.sendToServer(new CoremodClient.Play(job.id(), route));
+            Minecraft.getInstance().setScreen(null);
+            playSent = true;
+        }, () -> playSent && (started && worldReady() || inMenu && Minecraft.getInstance().screen instanceof MainMenuScreen));
+    }
+
+    /** Vom Server: der Spieler ist am Ziel (Teleport und ggf. Zug sind durch). */
+    static void started() {
+        started = true;
+    }
+
+    /** Ist der Abschnitt der Welt gebaut, in dem der Spieler steht? Vorher sähe man nach dem Teleport ins Leere. */
+    private static boolean worldReady() {
+        Minecraft minecraft = Minecraft.getInstance();
+        return minecraft.player != null && minecraft.levelRenderer.isSectionCompiled(minecraft.player.blockPosition());
     }
 
     static void quit() {

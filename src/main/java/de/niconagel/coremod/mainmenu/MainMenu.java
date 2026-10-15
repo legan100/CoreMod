@@ -34,6 +34,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.common.NeoForgeMod;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Vector3f;
@@ -83,26 +84,32 @@ public final class MainMenu {
 
     /** Nach Ankunft am letzten Halt bis zum Abblenden. */
     private static final int RETURN_DELAY = 15 * 20;
+    /** Nach einem durchfahrenen Halt bis zum Abblenden. */
+    private static final int ABORT_DELAY = 5 * 20;
     /** So lange blendet der Client ab (FadeToMenu), dann ist der Bildschirm schwarz und der Wechsel unsichtbar. */
     private static final int FADE = 30;
+    /** Alle so viele Ticks wird die Lage zum nächsten Halt geprüft; kurz, damit kein schneller Zug unbemerkt durchrutscht. */
+    private static final int CHECK = 5;
 
     /** Gestartete Route: wo der Zug ist und wie weit das Ende schon ist. */
     private static final class Fahrt {
         final Strecken.Route route;
         final UUID train;
         final String dimension;
-        /** Halte, an denen der Zug schon gestanden hat; der Client zeigt nur die übrigen an. */
-        final boolean[] done;
-        /** Tick der Ankunft am letzten Halt, -1 = noch unterwegs. */
-        int arrivedAt = -1;
-        /** Tick, ab dem abgeblendet wird, -1 = noch nicht. */
+        /** Nächster Halt; davor hat der Zug überall gehalten, der Client zeigt nur die übrigen an. */
+        int next;
+        /** Der Zug ist im Bereich des nächsten Halts; verlässt er ihn, ohne zu halten, ist der Halt durchfahren. */
+        boolean atNext;
+        /** Tick, ab dem abgeblendet wird, -1 = die Fahrt läuft noch. */
         int fadeAt = -1;
+        boolean fadeSent;
+        /** Bremse 100 %, Fahrschalter 0, die Eingaben des Fahrers zählen nicht mehr (nach dem letzten Halt). */
+        boolean hold;
 
         Fahrt(Strecken.Route route, UUID train, String dimension) {
             this.route = route;
             this.train = train;
             this.dimension = dimension;
-            this.done = new boolean[route.stops().size()];
         }
 
         /** Die Halte für die Anzeige beim Fahrer. */
@@ -113,7 +120,7 @@ public final class MainMenu {
                 Abstellungen.Gleispunkt punkt = route.stops().get(i).punkt();
                 stops.add(new MainMenuNetwork.Marker(new Vector3f((float) punkt.x(), (float) punkt.y(), (float) punkt.z()),
                         route.stops().get(i).name()));
-                flags.add(done[i]);
+                flags.add(i < next);
             }
             return new MainMenuNetwork.FahrtState(stops, flags);
         }
@@ -213,8 +220,13 @@ public final class MainMenu {
      */
     static void play(ServerPlayer player, Job job, String routeNumber) {
         UUID uuid = player.getUUID();
+        if (!isInMenu(player)) return;
+        // Der Client hat das Menü schon zu und wartet im Schwarz: bei jedem Abbruch bekommt er es wieder
         // Im Menü hat der Spieler noch keinen Job, has() prüft hier also nur die Rolle
-        if (!isInMenu(player) || !PermissionManager.has(uuid, job.getPermission())) return;
+        if (!PermissionManager.has(uuid, job.getPermission())) {
+            sendMenu(player);
+            return;
+        }
 
         Strecken.Route route = null;
         Zugeinsatz.Eingesetzt train = null;
@@ -222,7 +234,11 @@ public final class MainMenu {
         String zugnummer = null;
         if (job == Job.TF) {
             route = Strecken.route(routeNumber);
-            if (route == null) return;
+            if (route == null) {
+                player.sendSystemMessage(Component.literal("Die Route " + routeNumber + " gibt es nicht mehr.").withStyle(ChatFormatting.RED));
+                sendMenu(player);
+                return;
+            }
             LocalTime now = LocalTime.now(TIME_ZONE);
             departure = now.plusMinutes(5);
             zugnummer = Strecken.zugnummer(route.number(), now);
@@ -277,6 +293,8 @@ public final class MainMenu {
             // Halte beim Fahrer leuchten lassen
             PacketDistributor.sendToPlayer(player, FAHRTEN.get(uuid).state());
         }
+        // Erst jetzt blendet der Client auf, Teleport und Zug sind dann schon bei ihm
+        PacketDistributor.sendToPlayer(player, MainMenuNetwork.Started.INSTANCE);
     }
 
     /**
@@ -327,44 +345,78 @@ public final class MainMenu {
     }
 
     /**
-     * Ende einer Fahrt: Steht der Zug am letzten Halt, gibt es eine Meldung, 15 Sekunden später blendet der Client
-     * ab, und sobald es schwarz ist, verschwindet der Zug und der Spieler ist zurück im Menü.
+     * Verlauf einer Fahrt. Die Halte müssen der Reihe nach angefahren werden:
+     * <ul>
+     *     <li>Zum Stehen gekommen: Halt erledigt. Am letzten Halt gibt es eine Meldung, der Zug wird festgehalten, nach
+     *     15 Sekunden geht es zurück ins Menü.</li>
+     *     <li>Durch den Bereich des Halts gefahren, ohne zu halten: Route missachtet, nach 5 Sekunden zurück ins Menü.</li>
+     *     <li>Zug weg (z.B. von jemand anderem entfernt): sofort zurück ins Menü.</li>
+     * </ul>
+     * Zurück ins Menü heißt: der Client blendet ab, sobald es schwarz ist, verschwindet der Zug und der Spieler ist im Menü.
      */
     private static void tickFahrt(ServerPlayer player, Fahrt fahrt) {
         int now = player.server.getTickCount();
         ServerLevel level = level(player.server, fahrt.dimension);
 
-        if (fahrt.arrivedAt < 0) {
-            if (now % 10 != 0) return;
-            List<Strecken.Haltepunkt> stops = fahrt.route.stops();
-            boolean changed = false;
-            for (int i = 0; i < stops.size(); i++) {
-                if (fahrt.done[i] || !Zugeinsatz.standsAt(level, fahrt.train, stops.get(i).punkt())) continue;
-                fahrt.done[i] = true;
-                changed = true;
+        if (fahrt.fadeAt >= 0) {
+            if (!fahrt.fadeSent && now >= fahrt.fadeAt) {
+                fahrt.fadeSent = true;
+                PacketDistributor.sendToPlayer(player, MainMenuNetwork.FadeToMenu.INSTANCE);
             }
-            if (!changed) return;
-            PacketDistributor.sendToPlayer(player, fahrt.state());
-
-            // Am letzten Halt ist Schluss, auch wenn unterwegs einer ausgelassen wurde
-            if (!fahrt.done[stops.size() - 1]) return;
-            fahrt.arrivedAt = now;
-            player.sendSystemMessage(Component.literal("Haltepunkt \"" + stops.getLast().name() + "\" erreicht. Rückkehr zum Menü in "
-                    + RETURN_DELAY / 20 + " Sekunden.").withStyle(ChatFormatting.GREEN));
-        } else if (fahrt.fadeAt < 0) {
-            if (now - fahrt.arrivedAt < RETURN_DELAY) return;
-            fahrt.fadeAt = now;
-            PacketDistributor.sendToPlayer(player, MainMenuNetwork.FadeToMenu.INSTANCE);
-        } else if (now - fahrt.fadeAt >= FADE) {
-            FAHRTEN.remove(player.getUUID());
-            JOBS.remove(player.getUUID());
-            player.stopRiding();
-            Zugeinsatz.remove(level, fahrt.train);
-            PacketDistributor.sendToPlayer(player, MainMenuNetwork.FahrtState.NONE);
-            enterMenu(player);
-            // Ohne Job gelten wieder nur die Rechte der Rolle
-            player.server.getPlayerList().sendPlayerPermissionLevel(player);
+            if (now >= fahrt.fadeAt + FADE) backToMenu(player, fahrt, level);
+            return;
         }
+        if (now % CHECK != 0) return;
+
+        List<Strecken.Haltepunkt> stops = fahrt.route.stops();
+        Strecken.Haltepunkt stop = stops.get(fahrt.next);
+        switch (Zugeinsatz.lage(level, fahrt.train, stop.punkt())) {
+            case GONE -> {
+                player.sendSystemMessage(Component.literal("Dein Zug ist nicht mehr da. Die Route ist beendet.").withStyle(ChatFormatting.RED));
+                fahrt.fadeAt = now;
+            }
+            case NEAR -> fahrt.atNext = true;
+            case AWAY -> {
+                if (!fahrt.atNext) return;
+                player.sendSystemMessage(Component.literal("Du hast den Halt \"" + stop.name()
+                        + "\" durchfahren und die Route missachtet. Die Route wird abgebrochen.").withStyle(ChatFormatting.RED));
+                fahrt.fadeAt = now + ABORT_DELAY;
+            }
+            case STOPPED -> {
+                fahrt.next++;
+                fahrt.atNext = false;
+                PacketDistributor.sendToPlayer(player, fahrt.state());
+                if (fahrt.next < stops.size()) return;
+
+                player.sendSystemMessage(Component.literal("Haltepunkt \"" + stop.name() + "\" erreicht. Rückkehr zum Menü in "
+                        + RETURN_DELAY / 20 + " Sekunden.").withStyle(ChatFormatting.GREEN));
+                fahrt.hold = true;
+                Zugeinsatz.hold(level, fahrt.train);
+                fahrt.fadeAt = now + RETURN_DELAY;
+            }
+        }
+    }
+
+    /** Während der Zug festgehalten wird, vor MRs Physik (die im Post-Tick der Welt läuft): Tasten des Fahrers zählen nicht. */
+    @SubscribeEvent
+    public static void onLevelTick(LevelTickEvent.Pre event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) return;
+        String dimension = level.dimension().location().toString();
+        for (Fahrt fahrt : FAHRTEN.values()) {
+            if (fahrt.hold && fahrt.dimension.equals(dimension)) Zugeinsatz.hold(level, fahrt.train);
+        }
+    }
+
+    /** Ende der Fahrt, der Bildschirm ist schwarz: Zug weg, Spieler ohne Job zurück ins Menü. */
+    private static void backToMenu(ServerPlayer player, Fahrt fahrt, ServerLevel level) {
+        FAHRTEN.remove(player.getUUID());
+        JOBS.remove(player.getUUID());
+        player.stopRiding();
+        Zugeinsatz.remove(level, fahrt.train);
+        PacketDistributor.sendToPlayer(player, MainMenuNetwork.FahrtState.NONE);
+        enterMenu(player);
+        // Ohne Job gelten wieder nur die Rechte der Rolle
+        player.server.getPlayerList().sendPlayerPermissionLevel(player);
     }
 
     private static void hover(ServerPlayer player) {

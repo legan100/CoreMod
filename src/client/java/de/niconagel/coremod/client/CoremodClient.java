@@ -154,6 +154,18 @@ public final class CoremodClient {
         }
     }
 
+    /** Server → Client: Job-Wahl angenommen, der Spieler ist am Ziel; siehe {@link MainMenuClient#play}. */
+    public record Started() implements CustomPacketPayload {
+        public static final Started INSTANCE = new Started();
+        public static final Type<Started> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath("coremod", "started"));
+        public static final StreamCodec<ByteBuf, Started> CODEC = StreamCodec.unit(INSTANCE);
+
+        @Override
+        public Type<Started> type() {
+            return TYPE;
+        }
+    }
+
     /** Server → Client: Fahrt zu Ende, abblenden; zurück ins Menü holt der Server, siehe {@link Abblende}. */
     public record FadeToMenu() implements CustomPacketPayload {
         public static final FadeToMenu INSTANCE = new FadeToMenu();
@@ -363,9 +375,10 @@ public final class CoremodClient {
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         // optional: Server ohne CoreMod lassen sich trotzdem betreten
-        PayloadRegistrar registrar = event.registrar("10").optional();
+        PayloadRegistrar registrar = event.registrar("11").optional();
 
-        registrar.playToClient(FadeToMenu.TYPE, FadeToMenu.CODEC, (payload, context) -> Abblende.start());
+        registrar.playToClient(Started.TYPE, Started.CODEC, (payload, context) -> MainMenuClient.started());
+        registrar.playToClient(FadeToMenu.TYPE, FadeToMenu.CODEC, (payload, context) -> Abblende.toMenu());
         registrar.playToClient(FahrtState.TYPE, FahrtState.CODEC, (payload, context) -> Haltanzeige.update(payload));
 
         // Hauptmenü
