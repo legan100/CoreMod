@@ -22,6 +22,17 @@ java {
     }
 }
 
+sourceSets {
+    main {
+        resources {
+            srcDir 'src/generated/resources'
+        }
+    }
+
+    // Client-Mod (Hauptmenü) als eigene Jar: der Server-Code landet nie beim Spieler und umgekehrt
+    client
+}
+
 neoForge {
     version = project.neo_version
 
@@ -30,15 +41,28 @@ neoForge {
         minecraftVersion = project.parchment_minecraft_version
     }
 
+    addModdingDependenciesTo(sourceSets.client)
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+
+        coremod_client {
+            sourceSet(sourceSets.client)
+        }
+    }
+
+    // Wie in echt: der Client hat nur die Client-Mod, der Server nur CoreMod
     runs {
         client {
             client()
-
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            loadedMods = [mods.coremod_client]
         }
 
         server {
             server()
+            loadedMods = [mods."${mod_id}"]
 
             programArgument '--nogui'
 
@@ -47,12 +71,14 @@ neoForge {
 
         gameTestServer {
             type = "gameTestServer"
+            loadedMods = [mods."${mod_id}"]
 
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
         }
 
         data {
             data()
+            loadedMods = [mods."${mod_id}"]
 
             programArguments.addAll(
                     '--mod', project.mod_id,
@@ -64,20 +90,6 @@ neoForge {
 
         configureEach {
             systemProperty 'forge.logging.markers', 'REGISTRIES'
-        }
-    }
-
-    mods {
-        "${mod_id}" {
-            sourceSet(sourceSets.main)
-        }
-    }
-}
-
-sourceSets {
-    main {
-        resources {
-            srcDir 'src/generated/resources'
         }
     }
 }
@@ -131,24 +143,24 @@ test {
 }
 
 
+var replaceProperties = [
+        minecraft_version      : minecraft_version,
+        minecraft_version_range: minecraft_version_range,
+        neo_version            : neo_version,
+        neo_version_range      : neo_version_range,
+        loader_version_range   : loader_version_range,
+        mod_id                 : mod_id,
+        mod_name               : mod_name,
+        mod_license            : mod_license,
+        mod_version            : mod_version,
+        mod_authors            : mod_authors,
+        mod_description       : mod_description
+]
+
 var generateModMetadata = tasks.register(
         "generateModMetadata",
         ProcessResources
 ) {
-    var replaceProperties = [
-            minecraft_version      : minecraft_version,
-            minecraft_version_range: minecraft_version_range,
-            neo_version            : neo_version,
-            neo_version_range      : neo_version_range,
-            loader_version_range   : loader_version_range,
-            mod_id                 : mod_id,
-            mod_name               : mod_name,
-            mod_license            : mod_license,
-            mod_version            : mod_version,
-            mod_authors            : mod_authors,
-            mod_description       : mod_description
-    ]
-
     inputs.properties replaceProperties
 
     from "src/main/templates"
@@ -157,9 +169,33 @@ var generateModMetadata = tasks.register(
     expand replaceProperties
 }
 
+var generateClientModMetadata = tasks.register(
+        "generateClientModMetadata",
+        ProcessResources
+) {
+    inputs.properties replaceProperties
+
+    from "src/client/templates"
+    into "build/generated/sources/clientModMetadata"
+
+    expand replaceProperties
+}
+
 sourceSets.main.resources.srcDir generateModMetadata
+sourceSets.client.resources.srcDir generateClientModMetadata
 
 neoForge.ideSyncTask generateModMetadata
+neoForge.ideSyncTask generateClientModMetadata
+
+// build/libs/coremod-<version>.jar → Server, build/libs/coremod-<version>-client.jar → Spieler
+var clientJar = tasks.register("clientJar", Jar) {
+    from sourceSets.client.output
+    archiveClassifier = "client"
+}
+
+tasks.named("assemble") {
+    dependsOn clientJar
+}
 
 
 // ========================================================

@@ -3,6 +3,7 @@ package de.niconagel.coremod.permission;
 import com.mojang.brigadier.context.CommandContextBuilder;
 import de.niconagel.coremod.Coremod;
 import de.niconagel.coremod.api.Permissions;
+import de.niconagel.coremod.mainmenu.MainMenu;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.core.BlockPos;
@@ -300,14 +301,11 @@ public final class PermissionListener {
 
     @SubscribeEvent
     public static void onTick(PlayerTickEvent.Post event) {
-        if (!(event.getEntity() instanceof ServerPlayer player) || player.isFakePlayer()) return;
+        // Im Hauptmenü gibt es noch keinen Job: Spielmodus bleibt bis zur Job-Wahl, das Schweben regelt MainMenu
+        if (!(event.getEntity() instanceof ServerPlayer player) || player.isFakePlayer() || MainMenu.isInMenu(player)) return;
         UUID uuid = player.getUUID();
 
-        // Nicht erlaubter Spielmodus (z.B. beim Join schon Creative) → zurücksetzen
-        GameType mode = player.gameMode.getGameModeForPlayer();
-        if (!PermissionManager.mayUseGameMode(uuid, mode)) {
-            player.setGameMode(PermissionManager.fallbackGameMode(uuid));
-        }
+        applyAbilities(player);
 
         if (PermissionManager.has(uuid, Permissions.MOVE)) {
             FROZEN.remove(uuid);
@@ -319,6 +317,17 @@ public final class PermissionListener {
             if (player.position().distanceToSqr(pos) > 0.01) {
                 player.connection.teleport(pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
             }
+        }
+    }
+
+    /** Spielmodus und Fliegen an die aktuellen Rechte anpassen. Jeden Tick und sofort bei der Job-Wahl. */
+    public static void applyAbilities(ServerPlayer player) {
+        UUID uuid = player.getUUID();
+
+        // Nicht erlaubter Spielmodus (z.B. Creative vom letzten Job) → zurücksetzen
+        GameType mode = player.gameMode.getGameModeForPlayer();
+        if (!PermissionManager.mayUseGameMode(uuid, mode)) {
+            player.setGameMode(PermissionManager.fallbackGameMode(uuid));
         }
 
         // Fliegen über das NeoForge-Attribut; Creative und Spectator fliegen unabhängig davon

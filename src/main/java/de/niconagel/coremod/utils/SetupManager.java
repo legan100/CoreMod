@@ -50,7 +50,7 @@ public class SetupManager {
             serverFileManager.writeInNextFreeLine("tablistfooter: null");
         }
 
-        PermissionManager.load(Path.of("CoreMod/permissions.json"));
+        PermissionManager.load(Path.of("CoreMod/permissions.json"), Path.of("CoreMod/jobs.json"));
         BuildZones.load();
     }
 

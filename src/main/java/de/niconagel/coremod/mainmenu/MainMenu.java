@@ -5,6 +5,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import com.mojang.logging.LogUtils;
 import de.niconagel.coremod.Coremod;
+import de.niconagel.coremod.api.Job;
+import de.niconagel.coremod.permission.PermissionListener;
+import de.niconagel.coremod.permission.PermissionManager;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceKey;
@@ -30,6 +33,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,7 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Serverseite des Hauptmenüs. Beim Join wird der Spieler für andere unsichtbar und schwebend an die View gesetzt (damit der Client
  * dort die Welt geladen hat und sie als Hintergrund zeigen kann) und bekommt das Menü geöffnet.
- * "Spielen" bringt ihn zurück an die Stelle, an der er vor dem Disconnect war.
+ * Mit der Job-Wahl ("Spielen" → Job) bekommt er die Rechte des Jobs und kommt zurück an die Stelle, an der er vor dem Disconnect war.
  */
 @EventBusSubscriber(value = Dist.DEDICATED_SERVER)
 public final class MainMenu {
@@ -52,6 +58,8 @@ public final class MainMenu {
     private static final ResourceLocation MENU_FLIGHT = ResourceLocation.fromNamespaceAndPath(Coremod.MOD_ID, "main_menu_flight");
 
     private static final Set<UUID> IN_MENU = ConcurrentHashMap.newKeySet();
+    /** Nur für diese Sitzung: nach jedem Join wird im Menü neu gewählt. */
+    private static final Map<UUID, Job> JOBS = new ConcurrentHashMap<>();
     private static volatile View view;
 
     private MainMenu() {
@@ -65,6 +73,11 @@ public final class MainMenu {
     /** Spieler im Menü dürfen nichts tun und nehmen keinen Schaden. */
     public static boolean isInMenu(Entity entity) {
         return IN_MENU.contains(entity.getUUID());
+    }
+
+    /** @return der im Menü gewählte Job, null solange der Spieler im Menü oder offline ist */
+    public static Job getJob(UUID player) {
+        return JOBS.get(player);
     }
 
     public static View getView() {
@@ -111,19 +124,38 @@ public final class MainMenu {
 
         // Sichtbarkeit für alle anderen neu prüfen, siehe ServerPlayerMixin
         player.serverLevel().getChunkSource().move(player);
-        PacketDistributor.sendToPlayer(player, new MainMenuNetwork.OpenMenu());
+        sendMenu(player);
     }
 
-    /** "Spielen": zurück an die gemerkte Stelle. */
-    static void play(ServerPlayer player) {
-        if (!IN_MENU.remove(player.getUUID())) return;
+    /**
+     * Öffnet das Menü bzw. aktualisiert die wählbaren Jobs. Beim Join gilt der Spieler bis zur API-Antwort als Gast,
+     * deshalb schickt der JoinListener die Jobs nach dem Laden der Rolle noch einmal.
+     */
+    public static void sendMenu(ServerPlayer player) {
+        if (!isInMenu(player)) return;
+        List<MainMenuNetwork.JobEntry> jobs = Arrays.stream(Job.values())
+                .filter(job -> PermissionManager.has(player.getUUID(), job.getPermission()))
+                .map(MainMenuNetwork.JobEntry::of)
+                .toList();
+        PacketDistributor.sendToPlayer(player, new MainMenuNetwork.OpenMenu(jobs));
+    }
 
+    /** Job im Menü gewählt: ab jetzt gelten seine Rechte. */
+    static void play(ServerPlayer player, Job job) {
+        UUID uuid = player.getUUID();
+        // Im Menü hat der Spieler noch keinen Job, has() prüft hier also nur die Rolle
+        if (!isInMenu(player) || !PermissionManager.has(uuid, job.getPermission())) return;
+        IN_MENU.remove(uuid);
+        JOBS.put(uuid, job);
+
+        // ponytail: TF und FDL kommen vorerst auch an die gemerkte Stelle, eigener Einstieg folgt
         CompoundTag back = player.getPersistentData().getCompound(RETURN_KEY);
         player.getPersistentData().remove(RETURN_KEY);
 
-        // Fähigkeiten zurück auf den Spielmodus, Fliegen nur wenn vorher geflogen und weiterhin erlaubt
+        // Fähigkeiten an den Job anpassen, Fliegen nur wenn vorher geflogen und weiterhin erlaubt
         AttributeInstance flight = player.getAttribute(NeoForgeMod.CREATIVE_FLIGHT);
         if (flight != null) flight.removeModifier(MENU_FLIGHT);
+        PermissionListener.applyAbilities(player);
         Abilities abilities = player.getAbilities();
         abilities.flying = false;
         player.gameMode.getGameModeForPlayer().updatePlayerAbilities(abilities);
@@ -137,6 +169,9 @@ public final class MainMenu {
                     back.getFloat("yaw"), back.getFloat("pitch"));
         }
         player.serverLevel().getChunkSource().move(player);
+
+        // OP-Level für den Client (F3+F4) und Befehlsliste passend zum Job
+        player.server.getPlayerList().sendPlayerPermissionLevel(player);
     }
 
     /**
@@ -163,6 +198,7 @@ public final class MainMenu {
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         // Die gemerkte Position bleibt in den Spielerdaten, beim nächsten Join geht es dorthin zurück
         IN_MENU.remove(event.getEntity().getUUID());
+        JOBS.remove(event.getEntity().getUUID());
     }
 
     @SubscribeEvent

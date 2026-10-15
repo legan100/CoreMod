@@ -19,8 +19,8 @@ public class Coremod {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     public Coremod() {
-        // Die Mod läuft auch bei den Spielern (Hauptmenü). Rechte, Tablist, API usw. gehören nur auf den
-        // echten Server, sonst wäre z.B. jeder im Einzelspieler ein eingeschränkter Gast.
+        // Gehört nur auf den Server, das Hauptmenü ist die eigene Client-Mod (src/client). Landet die Jar doch
+        // im Client, bleibt sie inaktiv, sonst wäre z.B. jeder im Einzelspieler ein eingeschränkter Gast.
         if (FMLEnvironment.dist.isDedicatedServer()) {
             setupManager = new SetupManager();
             setupManager.onSetup();

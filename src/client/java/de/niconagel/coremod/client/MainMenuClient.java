@@ -1,7 +1,5 @@
 package de.niconagel.coremod.client;
 
-import de.niconagel.coremod.Coremod;
-import de.niconagel.coremod.mainmenu.MainMenuNetwork;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ReceivingLevelScreen;
 import net.neoforged.api.distmarker.Dist;
@@ -10,33 +8,44 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.util.List;
+
 /**
  * Hält den Client im Hauptmenü, bis "Spielen" gedrückt wird. Öffnet das Menü erst nach dem Ladebildschirm
  * und öffnet es wieder, falls etwas anderes es geschlossen hat (z.B. ein Dimensionswechsel).
  */
-@EventBusSubscriber(modid = Coremod.MOD_ID, value = Dist.CLIENT)
+@EventBusSubscriber(modid = CoremodClient.MOD_ID, value = Dist.CLIENT)
 public final class MainMenuClient {
 
     private static boolean inMenu;
     private static boolean introShown;
     /** F1-Zustand vor dem Menü; im Menü sind HUD, Hand und Block-Umrandung ausgeblendet. */
     private static boolean previousHideGui;
+    /** Vom Server: welche Jobs die Rolle wählen darf. */
+    static List<CoremodClient.JobEntry> jobs = List.of();
 
     private MainMenuClient() {
     }
 
-    /** Vom Server ausgelöst, beim Join. */
-    public static void open() {
+    /** Vom Server ausgelöst: beim Join und noch einmal, wenn die Rolle geladen ist (dann ändern sich ggf. die Jobs). */
+    public static void open(List<CoremodClient.JobEntry> availableJobs) {
+        Minecraft minecraft = Minecraft.getInstance();
         if (!inMenu) {
-            previousHideGui = Minecraft.getInstance().options.hideGui;
+            previousHideGui = minecraft.options.hideGui;
+            introShown = false;
         }
         inMenu = true;
-        introShown = false;
+        jobs = availableJobs;
+
+        if (minecraft.screen instanceof MainMenuScreen screen) {
+            // Knöpfe neu aufbauen, ohne das Intro neu zu starten
+            screen.resize(minecraft, screen.width, screen.height);
+        }
     }
 
-    static void play() {
+    static void play(CoremodClient.JobEntry job) {
         leave();
-        PacketDistributor.sendToServer(new MainMenuNetwork.Play());
+        PacketDistributor.sendToServer(new CoremodClient.Play(job.id()));
         Minecraft.getInstance().setScreen(null);
     }
 

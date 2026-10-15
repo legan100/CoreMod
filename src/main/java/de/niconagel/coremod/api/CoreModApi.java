@@ -1,5 +1,6 @@
 package de.niconagel.coremod.api;
 
+import de.niconagel.coremod.mainmenu.MainMenu;
 import de.niconagel.coremod.permission.PermissionManager;
 
 import java.util.Set;
@@ -19,6 +20,12 @@ public final class CoreModApi {
         return PermissionManager.getGroup(player);
     }
 
+    /** Im Hauptmenü gewählter Job, null solange der Spieler im Menü oder offline ist. */
+    public static Job getJob(UUID player) {
+        return MainMenu.getJob(player);
+    }
+
+    /** Rechte der Rolle plus die des aktuellen Jobs. */
     public static boolean hasPermission(UUID player, String permission) {
         return PermissionManager.has(player, permission);
     }

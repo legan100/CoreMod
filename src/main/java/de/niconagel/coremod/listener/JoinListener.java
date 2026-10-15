@@ -1,5 +1,6 @@
 package de.niconagel.coremod.listener;
 
+import de.niconagel.coremod.mainmenu.MainMenu;
 import de.niconagel.coremod.permission.PermissionManager;
 import de.niconagel.coremod.utils.PermissionCache;
 import de.niconagel.coremod.utils.Tablist;
@@ -43,6 +44,8 @@ public class JoinListener {
 
             // OP-Level für den Client und Befehlsliste neu senden, damit sie zur geladenen Gruppe passen
             player.server.getPlayerList().sendPlayerPermissionLevel(player);
+            // Wählbare Jobs hängen an der Rolle
+            MainMenu.sendMenu(player);
         }, player.server);
     }
 

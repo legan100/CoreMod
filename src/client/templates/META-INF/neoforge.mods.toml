@@ -1,0 +1,24 @@
+modLoader = "javafml"
+loaderVersion = "${loader_version_range}"
+license = "${mod_license}"
+
+[[mods]]
+modId = "coremod_client"
+version = "${mod_version}"
+displayName = "${mod_name} Client"
+authors = "${mod_authors}"
+description = '''Hauptmenü für den Server. Ohne CoreMod auf dem Server bleibt die Mod inaktiv.'''
+
+[[dependencies.coremod_client]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neo_version_range}"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.coremod_client]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "CLIENT"
