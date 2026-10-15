@@ -319,7 +319,9 @@ public class MainMenuScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        float time = ticks + partialTick;
+        // Nicht partialTick: NeoForge gibt Screens seit 21.1.2xx die Dauer des Frames statt des Anteils am Tick (MC-273464),
+        // damit sprang die Zeit und die Animation ruckelte
+        float time = ticks + minecraft.getTimer().getGameTimeDeltaPartialTick(false);
         float p = progress(time);
         float sub = sub(p);
         float fade = fade(time);
